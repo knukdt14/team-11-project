@@ -20,7 +20,8 @@ PDFS = {
     "PM2021": "!!210624_PM대자동차사고과실비율비정형기준_송부(2021).pdf",
     "ROUND2025": "250624_2차로형 회전교차로사고 과실비율 비정형기준.pdf",
     "CASES": "(최종)과실비율심의사례_(54MB).pdf",
-    "ROADLAW": "도로교통법_법률__제21246호__20260701_.pdf",
+    # 파일명이 조금씩 달라서 아래 KEYWORDS 로 찾습니다.
+    "ROADLAW": "도로교통법",
 }
 
 
@@ -31,24 +32,34 @@ def run(args: list[str]) -> None:
         raise SystemExit(f"실패: {' '.join(args)}")
 
 
-def find(name: str) -> Path:
-    p = PDF_DIR / name
-    if p.exists():
-        return p
-    # 파일명이 조금 달라도 찾아봅니다.
-    key = name.split("_")[0][:8]
-    for c in PDF_DIR.glob("*.pdf"):
-        if key in c.name:
-            return c
+# 파일명 대신 이 키워드로 PDF를 찾습니다(파일명이 팀원마다 달라도 동작).
+KEYWORDS = {
+    "MAIN2023": ["인정기준"],
+    "PM2021": ["PM대자동차", "PM"],
+    "ROUND2025": ["회전교차로"],
+    "CASES": ["심의사례"],
+    "ROADLAW": ["도로교통법"],
+}
+
+
+def find(sid: str) -> Path:
+    exact = PDF_DIR / PDFS[sid]
+    if exact.exists():
+        return exact
+    for kw in KEYWORDS[sid]:
+        for c in sorted(PDF_DIR.glob("*.pdf")):
+            if kw in c.name:
+                return c
     raise SystemExit(f"PDF를 찾을 수 없습니다: {name}\n  pdf/ 안의 파일: "
                      + ", ".join(c.name for c in PDF_DIR.glob('*.pdf')))
 
 
 def main() -> None:
     for sid in ("MAIN2023", "PM2021", "ROUND2025"):
-        run(["parse_pdf.py", "extract", str(find(PDFS[sid])), "--source-id", sid])
-    run(["parse_cases.py", str(find(PDFS["CASES"]))])
-    run(["parse_law.py", str(find(PDFS["ROADLAW"]))])
+        run(["parse_pdf.py", "extract", str(find(sid)), "--source-id", sid])
+        run(["extract_images.py", str(find(sid)), "--source-id", sid])
+    run(["parse_cases.py", str(find("CASES"))])
+    run(["parse_law.py", str(find("ROADLAW"))])
     run(["build_chunks.py"])
     run(["build_vector.py"])
     print("\n완료. 검색 확인:")

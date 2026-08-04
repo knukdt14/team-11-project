@@ -68,8 +68,9 @@ PROFILES: dict[str, Profile] = {
         source_id="MAIN2023",
         diagram_no=re.compile(r"^(보|차|거)(\d{1,3})(?:-(\d{1,2}))?$"),
         ratio_pair=re.compile(r"^A\s*(\d{1,3})\s*B\s*(\d{1,3})$"),
-        party_a=re.compile(r"^\(A\)\s*(.*)$"),
-        party_b=re.compile(r"^\(B\)\s*(.*)$"),
+        # 보행자 챕터는 (A)/(B) 대신 (보)/(차) 로 적혀 있습니다.
+        party_a=re.compile(r"^\((?:A|보)\)\s*(.*)$"),
+        party_b=re.compile(r"^\((?:B|차)\)\s*(.*)$"),
         section_labels=[
             "사고 상황", "기본 과실비율 해설",
             "수정요소(인과관계를 감안한 과실비율 조정) 해설", "수정요소 해설",
@@ -149,6 +150,21 @@ def norm_no(prof: Profile, m: re.Match) -> str:
     if prof.source_id == "PM2021":
         return m.group(1)
     return f"회전-{m.group(2)}"
+
+
+def cut_at_next(lines: list[str], diagram_no: str, prof: Profile) -> list[str]:
+    """자기 도표번호 이후, 다음 도표번호 직전까지만 남깁니다."""
+    try:
+        begin = lines.index(diagram_no)
+    except ValueError:
+        begin = 0
+    out = [lines[begin]] if begin < len(lines) else []
+    for ln in lines[begin + 1:]:
+        m = prof.diagram_no.match(ln)
+        if m and norm_no(prof, m) != diagram_no:
+            break
+        out.append(ln)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -402,10 +418,15 @@ def cmd_extract(pdf: Path, source_id: str, limit: int | None = None) -> None:
         for p in range(start, end + 1):
             lines += page_lines(doc[p - 1], prof)
 
+        # ⚠️ 한 페이지에 도표가 둘 이상 실리는 경우가 있습니다(예: 보3과 보4가 같은 쪽).
+        #    다음 도표번호가 나오면 거기서 잘라야 옆 도표의 기본과실을 먹지 않습니다.
+        lines = cut_at_next(lines, mk["diagram_no"], prof)
+
         try:
             parsed = parse_block(lines, mk, prof)
             sec = parse_sections(lines, prof)
-            body = " ".join(lines)
+            # \xa0(non-breaking space)가 섞여 있으면 법조항 매칭이 실패합니다.
+            body = " ".join(lines).replace("\u00a0", " ")
 
             records.append(Standard(
                 standard_id=f"{source_id}-{mk['diagram_no']}",
@@ -425,7 +446,7 @@ def cmd_extract(pdf: Path, source_id: str, limit: int | None = None) -> None:
                 modifier_explanation=pick(
                     sec, "수정요소(인과관계를 감안한 과실비율 조정) 해설",
                     "수정요소 해설", "수정요소 해설 :"),
-                laws=sorted(set(RE_LAW.findall(body))),
+                laws=sorted({re.sub(r"\s+", " ", x).strip() for x in RE_LAW.findall(body)}),
                 precedents=sorted({m.group(0) for m in RE_PRECEDENT.finditer(body)}),
                 legacy_nos=parsed["legacy_nos"],
                 source_page=start,
