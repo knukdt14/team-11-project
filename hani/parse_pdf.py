@@ -28,7 +28,10 @@ try:
 except ImportError:  # pragma: no cover
     raise SystemExit("PyMuPDF가 필요합니다:  pip install pymupdf") from None
 
-from schema import Modifier, Ratio, Standard
+try:                                    # 패키지로 import 될 때
+    from .schema import Modifier, Ratio, Standard
+except ImportError:                     # 스크립트로 직접 실행할 때
+    from schema import Modifier, Ratio, Standard
 
 ROOT = Path(__file__).resolve().parent
 INTERIM = ROOT / "data" / "interim"
@@ -39,6 +42,9 @@ RE_PRECEDENT = re.compile(
     r"(대법원|[가-힣]+법원[가-힣\s]*)\s*\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.\s*선고\s*\S+"
 )
 RE_LEGACY = re.compile(r"※?\s*舊\s*([0-9,\s]+)\s*기준")
+# 해설 문단 앞에 붙는 도표 표시 — "⊙보3 신호기가 있는 …"
+# 한 페이지에 도표가 둘 이상이면 해설이 다음 쪽에 이 표시로 **함께** 실립니다.
+RE_DIAG_MARK = re.compile(r"^⊙\s*((?:보|차|거)\d{1,3}(?:-\d{1,2})?)\s*")
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +171,21 @@ def cut_at_next(lines: list[str], diagram_no: str, prof: Profile) -> list[str]:
             break
         out.append(ln)
     return out
+
+
+def end_page_of(markers: list[dict], i: int, page_count: int, max_span: int = 3) -> int:
+    """
+    도표 i 가 읽어야 할 마지막 페이지.
+
+    ⚠️ 다음 도표가 **같은 페이지**에서 시작하는 경우가 있습니다(보3·보4가 같은 쪽).
+       이때 `다음마커.page - 1` 을 쓰면 시작 페이지보다 앞서 버려서 자기 쪽 하나만 읽게 되고,
+       **다음 쪽에 실린 '사고 상황·해설'을 통째로 놓칩니다.**
+       그래서 페이지가 실제로 넘어가는 다음 마커를 기준으로 끝을 잡습니다.
+    """
+    start = markers[i]["page"]
+    nxt = next((m["page"] for m in markers[i + 1:] if m["page"] > start), None)
+    end = nxt - 1 if nxt else min(start + 2, page_count)
+    return max(start, min(end, start + max_span))
 
 
 # ---------------------------------------------------------------------------
@@ -351,7 +372,12 @@ def parse_block(lines: list[str], mk: dict, prof: Profile) -> dict:
             pending = hit
             continue
         if ped_mode and 1 < len(name) < 30 and not name.startswith(("※", "⊙", "(")):
-            pending = ("B" if name.startswith("차의") else "A", name)
+            # ⚠️ 보행자 표는 **단일 컬럼("보행자 기본 과실비율")** 입니다.
+            #    모든 행이 보행자(A) 과실에 대한 가감이며,
+            #    "차의 현저한 과실 -10" 도 자동차가 아니라 **보행자 과실을 10 낮추라**는 뜻입니다.
+            #    이름에 '차'가 들어갔다고 B로 보내면 과실비율이 정반대로 나옵니다.
+            #    (보35처럼 A/B 2컬럼인 보 도표는 위 mod_prefixes 분기에서 이미 처리됩니다.)
+            pending = ("A", name)
             continue
         if prof.loose_modifier and 1 < len(name) < 24 and not name.startswith(
             ("※", "⊙", "[", "-", "사고", "기본", "수정")
@@ -376,19 +402,39 @@ def parse_block(lines: list[str], mk: dict, prof: Profile) -> dict:
     return res
 
 
-def parse_sections(lines: list[str], prof: Profile) -> dict:
+def parse_sections(lines: list[str], prof: Profile, diagram_no: str | None = None) -> dict:
+    """
+    '사고 상황' · '기본 과실비율 해설' 같은 서술 섹션을 뽑습니다.
+
+    ⚠️ 한 쪽에 도표가 둘 이상이면 해설이 **한 블록에 합쳐져** 실립니다.
+
+        사고 상황
+          ⊙보3 신호기가 있는 횡단보도에서 …
+          ⊙보4 신호기가 있는 횡단보도에서 …
+
+       `diagram_no` 를 주면 자기 문단만 남깁니다. 안 그러면 옆 도표의 사고 상황이
+       섞여 들어가서, 검색에서 엉뚱한 도표가 걸리고 화면에도 남의 설명이 나옵니다.
+       ⊙ 표시가 없는 문단(도표가 하나뿐인 쪽)은 그대로 자기 것으로 봅니다.
+    """
     out: dict[str, list[str]] = {k: [] for k in prof.section_labels}
     cur = None
+    owner: str | None = None          # 지금 읽고 있는 문단이 어느 도표 것인지
     for ln in lines:
         hit = next((lab for lab in prof.section_labels if ln.startswith(lab)), None)
         if hit:
-            cur = hit
+            cur, owner = hit, None
             rest = ln[len(hit):].strip(" :：")
             if rest:
                 out[cur].append(rest)
             continue
-        if cur:
-            out[cur].append(ln.lstrip("⊙●•\t ").strip())
+        if not cur:
+            continue
+        if m := RE_DIAG_MARK.match(ln):
+            owner = m.group(1)        # 이 줄부터 새 도표의 문단 (이어지는 줄도 같은 주인)
+            ln = ln[m.end():]
+        if diagram_no and owner and owner != diagram_no:
+            continue                  # 옆 도표 문단 — 버립니다
+        out[cur].append(ln.lstrip("⊙●•\t ").strip())
     return {k: " ".join(v).strip() for k, v in out.items()}
 
 
@@ -411,22 +457,25 @@ def cmd_extract(pdf: Path, source_id: str, limit: int | None = None) -> None:
 
     for i, mk in enumerate(markers):
         start = mk["page"]
-        end = markers[i + 1]["page"] - 1 if i + 1 < len(markers) else min(start + 2, doc.page_count)
-        end = max(start, min(end, start + 3))
+        end = end_page_of(markers, i, doc.page_count)
 
-        lines: list[str] = []
+        lines_all: list[str] = []
         for p in range(start, end + 1):
-            lines += page_lines(doc[p - 1], prof)
+            lines_all += page_lines(doc[p - 1], prof)
 
+        # 표(기본과실·수정요소)는 자기 도표번호부터 다음 도표번호 직전까지만 봅니다.
         # ⚠️ 한 페이지에 도표가 둘 이상 실리는 경우가 있습니다(예: 보3과 보4가 같은 쪽).
-        #    다음 도표번호가 나오면 거기서 잘라야 옆 도표의 기본과실을 먹지 않습니다.
-        lines = cut_at_next(lines, mk["diagram_no"], prof)
+        #    여기서 잘라야 옆 도표의 기본과실을 먹지 않습니다.
+        lines_tbl = cut_at_next(lines_all, mk["diagram_no"], prof)
 
         try:
-            parsed = parse_block(lines, mk, prof)
-            sec = parse_sections(lines, prof)
+            parsed = parse_block(lines_tbl, mk, prof)
+            # 서술 섹션은 **다음 쪽**에 걸쳐 있으므로 lines_all 에서 뽑되,
+            # ⊙도표번호 표시로 자기 문단만 남깁니다.
+            sec = parse_sections(lines_all, prof, mk["diagram_no"])
             # \xa0(non-breaking space)가 섞여 있으면 법조항 매칭이 실패합니다.
-            body = " ".join(lines).replace("\u00a0", " ")
+            # \ubc95\uc870\ud56d\u00b7\ud310\ub840\ub294 \uc790\uae30 \ud45c + \uc790\uae30 \uc139\uc158\uc5d0\uc11c\ub9cc \ucc3e\uc2b5\ub2c8\ub2e4(\uc606 \ub3c4\ud45c \uac83\uc774 \uc11e\uc774\uc9c0 \uc54a\uac8c).
+            body = " ".join(lines_tbl + [v for v in sec.values() if v]).replace("\u00a0", " ")
 
             records.append(Standard(
                 standard_id=f"{source_id}-{mk['diagram_no']}",

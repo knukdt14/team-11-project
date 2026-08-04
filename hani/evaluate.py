@@ -25,7 +25,10 @@ import argparse
 import csv
 from pathlib import Path
 
-from search import Searcher
+try:                                    # 패키지로 import 될 때
+    from .search import Searcher
+except ImportError:                     # 스크립트로 직접 실행할 때
+    from search import Searcher
 
 ROOT = Path(__file__).resolve().parent
 GOLD = ROOT / "gold_queries.csv"
