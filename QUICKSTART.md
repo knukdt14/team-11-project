@@ -6,13 +6,13 @@
 
 ## 1. 가상환경 만들기 (최초 1회)
 
-팀 전원이 **같은 파이썬(3.11) · 같은 패키지 버전**을 씁니다.
+팀 전원이 **같은 파이썬(3.13) · 같은 패키지 버전**을 씁니다.
 버전이 다르면 `vector_index/` 를 못 읽거나 검색 결과가 달라집니다.
 
 ### conda (권장 — 파이썬 버전까지 고정됩니다)
 
 ```bash
-conda create -n team-11-project python=3.11 -y
+conda create -n team-11-project python=3.13 -y
 ```
 
 ```bash
@@ -26,10 +26,11 @@ pip install -r requirements.txt
 ### conda가 없다면 venv
 
 ```bash
-py -3.11 -m venv .venv && .venv\Scripts\activate && pip install -r requirements.txt
+py -3.13 -m venv .venv && .venv\Scripts\activate && pip install -r requirements.txt
 ```
 
-> ⚠️ **파이썬 3.11을 쓰세요.** 3.12/3.13은 일부 패키지 휠이 늦게 올라와 설치가 깨질 수 있습니다.
+> ⚠️ **3.12 미만은 쓰지 마세요.** 코드가 f-string 안에서 백슬래시를 쓰는데
+> 이건 **3.12(PEP 701) 이상에서만** 되는 문법입니다. 3.11에서는 `SyntaxError` 로 죽습니다.
 
 ---
 
@@ -46,7 +47,7 @@ python -c "import fitz, pydantic, chromadb, sentence_transformers, fastapi, stre
 `hani/data/processed/` 에 청크·벡터 인덱스가 이미 커밋돼 있으므로 **PDF 없이 바로 검색됩니다.**
 
 ```bash
-cd hani && python search.py "뒤에서 오던 차가 제 차를 들이받았어요"
+python -m taek.search "뒤에서 오던 차가 제 차를 들이받았어요"
 ```
 
 기대 결과 — 상위에 `차41-1 양 차량 주행 중 후방 추돌` 계열이 나옵니다.
@@ -58,20 +59,23 @@ cd hani && python search.py "뒤에서 오던 차가 제 차를 들이받았어�
 ## 4. 검색 성능 측정
 
 ```bash
-cd hani && python evaluate.py
+python -m taek.evaluate
 ```
 
-Top-1 / Top-3 / MRR / 오답 방지율이 나오고 `eval_results.csv` 에 상세가 저장됩니다.
+Top-1 / Top-3 / MRR / 오답 방지율이 나오고 `taek/results/eval_vector.csv` 에 상세가 저장됩니다.
+BM25로 재보려면 `--mode bm25` (→ `eval_bm25.csv`).
+
 **검색을 손보기 전에 먼저 돌려서 기준선을 남기세요.** 그래야 개선인지 후퇴인지 알 수 있습니다.
+실험 기록과 지금까지의 결과는 [taek/EVAL.md](taek/EVAL.md) 에 있습니다.
 
 ---
 
 ## 5. 백엔드에서 검색 모듈 쓰기
 
-`hani` 는 패키지입니다. 저장소 루트에서 import 하세요.
+`hani`(데이터) 와 `taek`(검색) 두 패키지입니다. **저장소 루트에서** import 하세요.
 
 ```python
-from hani.search import Searcher
+from taek.search import Searcher
 from hani.party import to_consultant_view, describe
 
 searcher = Searcher()                     # ⚠️ FastAPI lifespan에서 1회만 생성
@@ -116,7 +120,7 @@ python build_chunks.py && python build_vector.py
 >
 > ⚠️ `build_chunks.py` 를 돌렸으면 **`build_vector.py` 도 돌려야** 합니다.
 > 안 그러면 문서와 벡터가 어긋난 채로 검색이 조용히 돌아갑니다.
-> (`search.py` 가 chunks 지문을 대조해 경고를 띄웁니다.)
+> (`taek/search.py` 가 chunks 지문을 대조해 경고를 띄웁니다.)
 
 ---
 

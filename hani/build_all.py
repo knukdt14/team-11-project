@@ -63,7 +63,7 @@ def main() -> None:
     run(["build_chunks.py"])
     run(["build_vector.py"])
     print("\n완료. 검색 확인:")
-    print('  python search.py "회전교차로 진입하다 사고"')
+    print('  cd .. && python -m taek.search "회전교차로 진입하다 사고"')
 
 
 if __name__ == "__main__":
