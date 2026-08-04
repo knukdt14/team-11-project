@@ -1,0 +1,165 @@
+[교통사고 과실비율 검색 시스템 - 1번 담당 인수인계 요약]
+
+1. 구현 완료 범위
+- 공통 데이터 스키마 구현
+- 과실비율 기준 PDF 3종 파싱
+- 심의사례 PDF 파싱
+- 도로교통법 PDF 파싱
+- JSONL 구조화
+- 검색용 facet 청크 생성
+- BGE-M3 임베딩
+- Chroma 벡터 인덱스 생성
+- 기본 Top-K 벡터 검색 구현
+- 전체 파이프라인 자동 실행
+
+※ SQLite, BM25, 하이브리드 검색, 리랭킹, 검색 평가는 제외
+
+
+2. 주요 파일
+- schema.py
+  공통 데이터 구조와 기본과실 합계 등을 검증
+
+- parse_pdf.py
+  MAIN2023, PM2021, ROUND2025 기준 PDF 파싱
+
+- parse_cases.py
+  과실비율분쟁 심의사례 파싱
+  사례는 참고용이며 기본과실 계산에 직접 사용하지 않음
+
+- parse_law.py
+  도로교통법 조문 파싱
+  현행 조문과 미시행 조문 구분
+
+- build_chunks.py
+  파싱 결과를 검색용 chunks.jsonl과 상세 payloads.json으로 생성
+  도표를 요약·상황·해설·수정요소 facet으로 분리
+
+- embedder.py
+  hash 및 SentenceTransformer 임베딩 지원
+  실제 검색은 BAAI/bge-m3 사용
+
+- build_vector.py
+  chunks.jsonl을 임베딩하고 Chroma에 저장
+
+- search.py
+  질문을 벡터 검색하고 parent_id 기준으로 결과를 합쳐 Top-K 반환
+
+- build_all.py
+  PDF 파싱 → 청킹 → 벡터 생성 전체 자동 실행
+
+
+3. 데이터 흐름
+PDF
+→ parse_pdf.py / parse_cases.py / parse_law.py
+→ data/interim/*.jsonl
+→ build_chunks.py
+→ chunks.jsonl + payloads.json
+→ build_vector.py
+→ vector_index
+→ search.py
+→ 사고유형 Top-K 검색
+
+
+4. 생성 파일
+data/interim/
+- MAIN2023_standards.jsonl
+- PM2021_standards.jsonl
+- ROUND2025_standards.jsonl
+- CASES_reviews.jsonl
+- ROADLAW_articles.jsonl
+
+data/processed/
+- chunks.jsonl
+- payloads.json
+- vector_index/
+
+
+5. 실행 방법
+cd /d C:\Users\KDT30\Desktop\team-11-project\hani
+C:\Users\KDT30\Desktop\team-01-project\.venv\Scripts\activate
+
+set EMBEDDING_BACKEND=st
+set EMBEDDING_MODEL=BAAI/bge-m3
+set EMBEDDING_BATCH=32
+
+python build_chunks.py
+rmdir /s /q data\processed\vector_index
+python build_vector.py
+python search.py "뒤에서 추돌당했습니다"
+
+
+6. 정상 확인 기준
+- chunks.jsonl이 0바이트가 아니어야 함
+- 현재 기준 약 1,878개 청크
+- build_vector.py 완료 후 Chroma 건수도 1,878건
+- "뒤에서 추돌당했습니다" 검색 시
+  차41-1 후방 추돌 유형이 1위로 나오면 정상
+
+
+7. 오류 해결
+[Error loading hnsw index]
+- vector_index 삭제 후 재생성
+- 한글 경로 대신 hani 같은 영문 경로 사용
+
+[chunks.jsonl이 0바이트]
+- python build_chunks.py 재실행
+- 그래도 비어 있으면 data/interim 확인 후 python build_all.py 실행
+
+[임베딩 백엔드 불일치]
+- 검색 전 아래 환경변수 재설정
+  set EMBEDDING_BACKEND=st
+  set EMBEDDING_MODEL=BAAI/bge-m3
+
+
+8. 2번 담당자에게 넘길 작업
+- BM25 키워드 검색
+- 벡터+키워드 하이브리드 검색
+- 메타데이터 필터 고도화
+- Cross Encoder 리랭킹
+- Top-1, Top-3, MRR 평가
+- 유사 판례·관련 법령 검색
+- 검색 실패 및 범위 밖 판정
+
+기존 search.py는 baseline 비교용으로 유지 권장
+
+
+9. 3번 API 담당 참고
+사용 예시
+
+from search import Searcher
+
+s = Searcher()
+hits = s.search(query, top_k=5, kind="standard")
+
+주요 반환값
+- hit.chunk_id
+- hit.score
+- hit.facet
+- hit.text
+- hit.payload
+
+계산 시
+- base_ratio 또는 base_ratio_variants 사용
+- decision_ratio는 참고 사례 값이므로 기본과실로 사용하지 않음
+- 사용자 차량이 A인지 B인지 확인 필요
+
+
+10. GitHub 권장
+커밋
+- hani/*.py
+- data/interim/*.jsonl
+- data/processed/chunks.jsonl
+- data/processed/payloads.json
+- 인수인계 문서
+
+커밋 비권장
+- data/processed/vector_index/
+  환경별로 build_vector.py를 통해 재생성 권장
+
+
+11. 최종 요약
+
+“PDF 원천 데이터를 구조화하고 기본 벡터 검색 결과가 나오게 하는 경로”는 완료했습니다.
+
+후속 담당자는 현재 Chroma 인덱스와 Searcher를 기반으로
+검색 성능 개선, API 연결, UI 연동을 진행하면 됩니다.
