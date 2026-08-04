@@ -1,101 +1,30 @@
 """
 임베딩 백엔드.
 
-두 가지를 같은 인터페이스로 제공합니다.
+SentenceTransformer 하나만 씁니다. 모델은 EMBEDDING_MODEL 로 지정합니다.
 
-  st    SentenceTransformer (BGE-m3 등) — 실제 운영용. 모델 다운로드 필요.
-  hash  문자 3-gram 해싱 — **모델 없이 동작하는 개발·검증용.**
+    EMBEDDING_MODEL=BAAI/bge-m3              (기본값 · 한국어 성능 좋음 · 1024차원)
+    EMBEDDING_MODEL=jhgan/ko-sroberta-multitask   (가볍고 빠름 · 768차원)
 
-⚠️ `hash` 는 의미 검색이 아니라 표기 유사도입니다. 파이프라인(청킹→인덱싱→검색)이
-   제대로 연결됐는지 확인하는 용도이며, 최종 검색 품질 측정에 쓰면 안 됩니다.
-   모델을 받을 수 있는 환경에서 `st` 로 바꿔 인덱스를 다시 만드세요.
+    EMBEDDING_DEVICE=cpu    GPU가 있어도 CPU 강제
+    EMBEDDING_BATCH=8       VRAM 부족할 때 낮추기
 
-  EMBEDDING_BACKEND=st  EMBEDDING_MODEL=BAAI/bge-m3  python build_vector
+⚠️ **인덱스와 질의는 반드시 같은 모델**이어야 합니다.
+   모델이 다르면 차원이 다르거나(→ Chroma 오류), 차원이 같아도 벡터 공간이 달라
+   결과가 조용히 엉망이 됩니다. search.py 가 인덱스 메타와 대조해 불일치면 중단시킵니다.
 
-⚠️ 어떤 백엔드를 쓰든 **질의도 같은 백엔드로 임베딩**해야 합니다.
-   인덱스와 질의의 백엔드가 다르면 검색 결과가 무의미해집니다.
+⚠️ 모델을 바꾸면 인덱스를 **폴더째 지우고** 다시 만드세요.
+       rmdir /s /q data\\processed\\vector_index
+       python build_vector.py
 """
 
 from __future__ import annotations
 
-import hashlib
-import math
 import os
-import re
-from abc import ABC, abstractmethod
-
-DEFAULT_DIM = 512
 
 
-class Embedder(ABC):
-    name: str
-    dim: int
-
-    @abstractmethod
-    def encode(self, texts: list[str]) -> list[list[float]]:
-        """L2 정규화된 벡터를 반환합니다 (코사인 유사도 전제)."""
-
-    def encode_one(self, text: str) -> list[float]:
-        return self.encode([text])[0]
-
-
-# ---------------------------------------------------------------------------
-
-
-class HashEmbedder(Embedder):
-    """
-    문자 3-gram 해싱 임베더. 외부 모델·네트워크 불필요.
-
-    - 한글은 형태 변화가 많아 단어 단위보다 문자 n-gram이 안정적입니다.
-    - 문서 길이 편향을 줄이려고 L2 정규화합니다.
-    """
-
-    name = "hash"
-
-    def __init__(self, dim: int = DEFAULT_DIM, n: int = 3):
-        self.dim = dim
-        self.n = n
-
-    @staticmethod
-    def _normalize(text: str) -> str:
-        text = text.lower()
-        text = re.sub(r"[^0-9a-z가-힣]+", " ", text)
-        return re.sub(r"\s+", " ", text).strip()
-
-    def _grams(self, text: str) -> list[str]:
-        t = self._normalize(text)
-        grams = [w for w in t.split() if w]  # 토큰 자체도 신호로 사용
-        compact = t.replace(" ", "")
-        grams += [compact[i : i + self.n] for i in range(max(0, len(compact) - self.n + 1))]
-        return grams
-
-    def encode(self, texts: list[str]) -> list[list[float]]:
-        out: list[list[float]] = []
-        for text in texts:
-            vec = [0.0] * self.dim
-            for g in self._grams(text):
-                h = hashlib.blake2b(g.encode("utf-8"), digest_size=8).digest()
-                idx = int.from_bytes(h[:4], "big") % self.dim
-                sign = 1.0 if h[4] & 1 else -1.0
-                vec[idx] += sign
-            norm = math.sqrt(sum(v * v for v in vec)) or 1.0
-            out.append([v / norm for v in vec])
-        return out
-
-
-# ---------------------------------------------------------------------------
-
-
-class STEmbedder(Embedder):
-    """
-    SentenceTransformer 기반. 운영용.
-
-    GPU가 있으면 자동으로 사용합니다.
-      EMBEDDING_DEVICE=cpu   로 강제 지정 가능
-      EMBEDDING_BATCH=32     배치 크기 (VRAM 부족하면 낮추세요)
-    """
-
-    name = "st"
+class Embedder:
+    """SentenceTransformer 래퍼. GPU가 있으면 자동으로 사용합니다."""
 
     def __init__(self, model_id: str | None = None):
         from sentence_transformers import SentenceTransformer  # noqa: PLC0415
@@ -114,7 +43,7 @@ class STEmbedder(Embedder):
 
         self.model = SentenceTransformer(self.model_id, device=device)
 
-        # GPU에서는 fp16으로 2배 가까이 빨라집니다. CPU는 fp16이 오히려 느려 건너뜁니다.
+        # GPU에서는 fp16으로 2배 가까이 빨라집니다. CPU는 오히려 느려 건너뜁니다.
         if device == "cuda":
             try:
                 self.model = self.model.half()
@@ -123,7 +52,7 @@ class STEmbedder(Embedder):
 
         try:
             self.dim = self.model.get_embedding_dimension()
-        except AttributeError:  # 구버전 호환
+        except AttributeError:  # sentence-transformers 구버전 호환
             self.dim = self.model.get_sentence_embedding_dimension()
 
         self.batch = int(os.getenv("EMBEDDING_BATCH", "32" if device == "cuda" else "8"))
@@ -139,14 +68,9 @@ class STEmbedder(Embedder):
             show_progress_bar=len(texts) > 64,
         ).tolist()
 
+    def encode_one(self, text: str) -> list[float]:
+        return self.encode([text])[0]
 
-# ---------------------------------------------------------------------------
 
-
-def build_embedder(backend: str | None = None) -> Embedder:
-    key = (backend or os.getenv("EMBEDDING_BACKEND", "hash")).lower()
-    if key == "st":
-        return STEmbedder()
-    if key != "hash":
-        raise SystemExit(f"알 수 없는 EMBEDDING_BACKEND: {key} (st | hash)")
-    return HashEmbedder()
+def build_embedder(model_id: str | None = None) -> Embedder:
+    return Embedder(model_id)

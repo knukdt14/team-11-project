@@ -33,6 +33,8 @@ import json
 import re
 from pathlib import Path
 
+from party import roles_of
+
 ROOT = Path(__file__).resolve().parent
 INTERIM = ROOT / "data" / "interim"
 PROCESSED = ROOT / "data" / "processed"
@@ -110,10 +112,14 @@ def standard_chunks(s: dict) -> tuple[list[dict], dict]:
         )
         out.append(make(pid, "수정요소", txt, "standard", s["source_id"], meta))
 
+    role_a, role_b = roles_of(s["source_id"], s["diagram_no"])
     payload = {
         "kind": "standard",
         "source_id": s["source_id"],
         "diagram_no": s["diagram_no"],
+        # ⚠️ A/B가 각각 무엇인지. 상담자 기준 변환은 party.to_consultant_view() 에서만.
+        "role_a": role_a,
+        "role_b": role_b,
         "title": s.get("title", ""),
         "section": s.get("section"),
         "party_a": s.get("party_a", ""),

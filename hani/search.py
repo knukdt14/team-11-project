@@ -1,7 +1,8 @@
 """
 기본 벡터 검색.
 
-담당 범위는 **"질문을 넣으면 후보 도표가 나온다"** 까지
+담당 범위는 **"질문을 넣으면 후보 도표가 나온다"** 까지입니다.
+리랭킹·문서 우선순위·LLM 답변 생성은 다른 담당의 영역입니다.
 
 사용
     from search import Searcher
@@ -16,6 +17,7 @@ CLI
 from __future__ import annotations
 
 import json
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -49,7 +51,7 @@ class Searcher:
     """
     Chroma 인덱스를 감싼 검색기.
 
-    인덱스를 만든 백엔드와 **같은 백엔드로 질의를 임베딩**
+    ⚠️ 인덱스를 만든 백엔드와 **같은 백엔드로 질의를 임베딩**합니다.
        다르면 경고를 띄웁니다 — 섞이면 결과가 무의미해집니다.
     """
 
@@ -67,10 +69,13 @@ class Searcher:
 
         인덱스_백엔드 = (self.col.metadata or {}).get("embedder")
         if 인덱스_백엔드 and 인덱스_백엔드 != self.embedder.name:
-            print(
-                f"⚠️ 인덱스는 '{인덱스_백엔드}' 로 만들었는데 질의는 '{self.embedder.name}' 입니다.\n"
-                f"   EMBEDDING_BACKEND 를 맞추거나 인덱스를 다시 만드세요.",
-                file=sys.stderr,
+            # 차원이 다르면 Chroma가 터지고, 같아도 벡터 공간이 달라 결과가 무의미합니다.
+            # 경고로 넘기면 조용히 틀린 결과가 나오므로 여기서 중단합니다.
+            raise SystemExit(
+                f"임베딩 모델 불일치\n"
+                f"  인덱스: {인덱스_백엔드}\n  질의  : {self.embedder.name}\n"
+                f"  EMBEDDING_MODEL 을 맞추거나, vector_index 폴더를 지우고\n"
+                f"  build_vector.py 로 인덱스를 다시 만드세요."
             )
 
         self.payloads: dict[str, dict] = (
@@ -127,17 +132,30 @@ class Searcher:
         hits = sorted(best.values(), key=lambda h: h.score, reverse=True)
         return hits[:top_k]
 
+    @staticmethod
+    def _law_id(no: str) -> str:
+        """
+        "도로교통법 제26조" → "ROAD-제26조"
+
+        ⚠️ PDF에서 non-breaking space(\xa0)가 섞여 나오는 경우가 있어
+           단순 문자열 치환으로는 매칭이 실패합니다. 공백을 모두 정규화합니다.
+        """
+        s = no.replace("\u00a0", " ").replace("도로교통법", "")
+        return f"ROAD-{re.sub(r'[\s]+', '', s)}"
+
     def laws_for(self, article_nos: list[str]) -> list[Hit]:
         """도표의 laws 필드로 조문 본문을 가져옵니다 (검색이 아니라 직접 조회)."""
-        ids = [f"ROAD-{no.replace('도로교통법 ', '').strip()}" for no in article_nos]
-        ids = [i for i in ids if i in self.payloads]
+        ids = [i for i in map(self._law_id, article_nos) if i in self.payloads]
         if not ids:
             return []
-        res = self.col.get(ids=ids)
-        return [
-            Hit(chunk_id=i, score=1.0, kind="law", text=d, payload=self.payloads.get(i, {}))
-            for i, d in zip(res["ids"], res["documents"], strict=False)
-        ]
+        res = self.col.get(where={"parent_id": {"$in": ids}})
+        best: dict[str, Hit] = {}
+        for cid, doc, meta in zip(res["ids"], res["documents"], res["metadatas"], strict=False):
+            pid = meta.get("parent_id", cid)
+            if pid not in best:
+                best[pid] = Hit(chunk_id=pid, score=1.0, kind="law", text=doc,
+                                payload=self.payloads.get(pid, {}), facet=meta.get("facet", ""))
+        return list(best.values())
 
 
 def main() -> None:
