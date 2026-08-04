@@ -3,7 +3,7 @@
 
 외부(백엔드)에서는 이렇게 씁니다.
 
-    from hani.search import Searcher
+    from taek.search import Searcher        # ← 검색은 taek/ 로 분리됐습니다
     from hani.party import to_consultant_view, describe
 
     s = Searcher()
@@ -21,8 +21,8 @@ CLI 스크립트는 그대로 동작합니다.
     python extract_images.py "pdf/….pdf" --source-id MAIN2023
     python build_chunks.py
     python build_vector.py
-    python search.py "뒤에서 추돌당했습니다"
-    python evaluate.py
+    python -m taek.search "뒤에서 추돌당했습니다"     (저장소 루트에서)
+    python -m taek.evaluate
 """
 
-__all__ = ["party", "schema", "search"]
+__all__ = ["party", "schema", "embedder"]
