@@ -33,7 +33,10 @@ import json
 import re
 from pathlib import Path
 
-from party import roles_of
+try:                                    # 패키지로 import 될 때 (backend 등 외부에서)
+    from .party import roles_of
+except ImportError:                     # 스크립트로 직접 실행할 때 (python build_chunks.py)
+    from party import roles_of
 
 ROOT = Path(__file__).resolve().parent
 INTERIM = ROOT / "data" / "interim"

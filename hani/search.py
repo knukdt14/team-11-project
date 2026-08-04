@@ -58,7 +58,10 @@ class Searcher:
     def __init__(self) -> None:
         import chromadb
 
-        from embedder import build_embedder
+        try:                            # 패키지로 import 될 때 (backend 등 외부에서)
+            from .embedder import build_embedder
+        except ImportError:             # 스크립트로 직접 실행할 때
+            from embedder import build_embedder
 
         if not VECTOR_DIR.exists():
             raise SystemExit("벡터 인덱스가 없습니다. `python build_vector` 먼저 실행")
@@ -76,6 +79,30 @@ class Searcher:
                 f"  인덱스: {인덱스_백엔드}\n  질의  : {self.embedder.name}\n"
                 f"  EMBEDDING_MODEL 을 맞추거나, vector_index 폴더를 지우고\n"
                 f"  build_vector.py 로 인덱스를 다시 만드세요."
+            )
+
+        # 청킹·파싱을 고쳤는데 인덱스를 다시 안 만들면 문서와 벡터가 어긋납니다.
+        # 오류가 안 나고 검색 품질만 조용히 떨어지므로 여기서 알려 줍니다.
+        try:
+            from .index_meta import chunks_fingerprint
+        except ImportError:
+            from index_meta import chunks_fingerprint
+        저장된_지문 = (self.col.metadata or {}).get("chunks_fp")
+        현재_지문 = chunks_fingerprint(ROOT / "data" / "processed" / "chunks.jsonl")
+        if not 저장된_지문:
+            # 지문 기록 이전에 만든 인덱스 — 최신인지 확인할 방법이 없습니다.
+            print(
+                "⚠️ 이 인덱스에는 chunks 지문이 없습니다(지문 기록 전에 만든 인덱스).\n"
+                "   현재 chunks.jsonl 과 일치하는지 확인할 수 없으니 한 번 다시 만드세요:\n"
+                "     python build_vector.py",
+                file=sys.stderr,
+            )
+        elif 현재_지문 and 저장된_지문 != 현재_지문:
+            print(
+                "⚠️ chunks.jsonl 이 인덱스를 만든 뒤에 바뀌었습니다.\n"
+                "   검색 결과가 현재 데이터와 어긋납니다. 인덱스를 다시 만드세요:\n"
+                "     python build_vector.py",
+                file=sys.stderr,
             )
 
         self.payloads: dict[str, dict] = (
@@ -142,6 +169,18 @@ class Searcher:
         """
         s = no.replace("\u00a0", " ").replace("도로교통법", "")
         return f"ROAD-{re.sub(r'[\s]+', '', s)}"
+
+    def cases(self, query: str, top_k: int = 3) -> list[Hit]:
+        """
+        심의사례 검색.
+
+        ⚠️ **참고용입니다. 계산에 쓰지 마세요.**
+           기본비율과 결정비율이 다른 사례가 226건 중 90건입니다.
+           또 A가 청구인인지 피청구인인지가 사례마다 뒤바뀌므로
+           payload 의 `a_party` / `b_party` 를 반드시 함께 표시하세요.
+           현행 도표와의 매핑은 아직 전부 `mapping_status="review_required"` 입니다.
+        """
+        return self.search(query, top_k=top_k, kind="case")
 
     def laws_for(self, article_nos: list[str]) -> list[Hit]:
         """도표의 laws 필드로 조문 본문을 가져옵니다 (검색이 아니라 직접 조회)."""

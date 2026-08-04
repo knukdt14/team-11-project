@@ -26,7 +26,12 @@ def main() -> None:
 
     import chromadb
 
-    from embedder import build_embedder
+    try:                                # 패키지로 import 될 때
+        from .embedder import build_embedder
+        from .index_meta import chunks_fingerprint
+    except ImportError:                 # 스크립트로 직접 실행할 때
+        from embedder import build_embedder
+        from index_meta import chunks_fingerprint
 
     chunks = [json.loads(l) for l in CHUNKS.open(encoding="utf-8") if l.strip()]
     emb = build_embedder()
@@ -43,7 +48,13 @@ def main() -> None:
         pass
     col = client.create_collection(
         COLLECTION,
-        metadata={"hnsw:space": "cosine", "embedder": emb.name, "dim": emb.dim},
+        metadata={
+            "hnsw:space": "cosine",
+            "embedder": emb.name,
+            "dim": emb.dim,
+            # 어떤 chunks.jsonl 로 만든 인덱스인지 기록 — search.py 가 대조합니다.
+            "chunks_fp": chunks_fingerprint(CHUNKS),
+        },
     )
 
     col.add(
