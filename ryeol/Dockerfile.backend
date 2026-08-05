@@ -1,0 +1,9 @@
+FROM python:3.13-slim
+WORKDIR /app
+COPY requirements.txt ./requirements.txt
+COPY ryeol/requirements.txt ./ryeol/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt -r ryeol/requirements.txt
+COPY hani ./hani
+COPY taek ./taek
+COPY ryeol ./ryeol
+CMD ["uvicorn", "ryeol.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
