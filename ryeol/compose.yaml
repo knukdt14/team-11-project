@@ -1,0 +1,52 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ryeol-ollama:/root/.ollama
+    gpus: all
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build:
+      context: ..
+      dockerfile: ryeol/Dockerfile.backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      LLM_MODE: ${LLM_MODE:-qwen}
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+      SEARCH_RERANK: ${SEARCH_RERANK:-true}
+    ports:
+      - "8000:8000"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 300s
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: ryeol/Dockerfile.frontend
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  ryeol-ollama:

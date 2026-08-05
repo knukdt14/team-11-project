@@ -383,17 +383,17 @@ S7 주석 렌더       바운딩박스·ID·궤적·충돌마커·특징배지 �
 | GET | `/video/{job_id}` | 잡 상태·진행률·CV 분석 결과 | ⬜ |
 | GET | `/media/{job_id}/annotated.mp4` | 주석 영상 (StaticFiles) | ⬜ |
 | GET | `/media/{job_id}/frames/{n}.jpg` | 충돌 순간 프레임 3컷 | ⬜ |
-| POST | `/consult` | 상담 (결정론적 파이프라인) — **시연 기본 경로** | ⬜ |
+| POST | `/consult` | 상담 (결정론적 파이프라인) — **시연 기본 경로** | ✅ |
 | POST | `/consult/agent` | 상담 (에이전트 tool calling) | ⬜ |
-| POST | `/recalculate` | 수정요소 토글 재계산 (LLM 미사용) | ⬜ |
+| POST | `/recalculate` | 수정요소 토글 재계산 (LLM 미사용) | ✅ |
 | POST | `/kb/ingest` | PDF 업로드 → 청킹 → 벡터스토어 추가 | ⬜ |
 | GET | `/kb/items` | KB 항목 목록·검색 | ⬜ |
 | GET | `/kb/tree` | 사고유형 트리 (selectbox 채우기) | ⬜ |
 | GET | `/kb/similar` | 유사 사례 검색 (4개 PDF 통합) | ⬜ |
 | GET | `/stats/coverage` | 사고유형별 도표 수 | ⬜ |
 | GET | `/stats/distribution` | 기본과실 분포 | ⬜ |
-| GET | `/images/{도표번호}.png` | 도표 이미지 (StaticFiles) | ⬜ |
-| GET | `/health` | 헬스체크 (KB 건수·LLM·검색모드) | ⬜ |
+| GET | `/images/{도표번호}.png` | 도표 이미지 (StaticFiles) | ✅ |
+| GET | `/health` | 헬스체크 (KB 건수·LLM·검색모드) | ✅ |
 
 <details>
 <summary><b>📄 <code>GET /video/{job_id}</code> 응답</b></summary>
