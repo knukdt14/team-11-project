@@ -1,11 +1,8 @@
 services:
   ollama:
     image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
     volumes:
       - ryeol-ollama:/root/.ollama
-    gpus: all
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 10s
@@ -15,7 +12,7 @@ services:
   ollama-init:
     image: ollama/ollama:latest
     entrypoint: ["ollama"]
-    command: ["pull", "${OLLAMA_MODEL:-qwen3:8b}"]
+    command: ["pull", "${OLLAMA_MODEL:-exaone3.5:2.4b}"]
     environment:
       OLLAMA_HOST: http://ollama:11434
     depends_on:
@@ -31,13 +28,16 @@ services:
       - path: .env
         required: false
     environment:
-      LLM_MODE: qwen
+      LLM_MODE: ${LLM_MODE:-auto}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.6-flash}
+      GEMINI_TIMEOUT: ${GEMINI_TIMEOUT:-20}
       OLLAMA_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-exaone3.5:2.4b}
+      OLLAMA_TIMEOUT: ${OLLAMA_TIMEOUT:-180}
       SEARCH_RERANK: "true"
       HF_HOME: /cache/huggingface
       SESSION_DB_PATH: /runtime/sessions.sqlite3
-    gpus: all
     volumes:
       - ryeol-hf-cache:/cache/huggingface
       - ryeol-runtime:/runtime
