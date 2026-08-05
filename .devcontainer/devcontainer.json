@@ -1,0 +1,25 @@
+{
+  "name": "team-11-project",
+  "image": "mcr.microsoft.com/devcontainers/python:3.13",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb",
+    "storage": "32gb"
+  },
+  "forwardPorts": [8000, 8501],
+  "portsAttributes": {
+    "8000": {
+      "label": "FastAPI Swagger",
+      "onAutoForward": "notify"
+    },
+    "8501": {
+      "label": "Streamlit",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "postCreateCommand": "cp -n ryeol/.env.example ryeol/.env || true",
+  "remoteUser": "vscode"
+}

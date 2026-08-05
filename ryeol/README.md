@@ -10,7 +10,16 @@ Copy-Item .env.example .env
 docker compose up --build -d
 ```
 
-`ollama-init` 서비스가 `qwen3:8b`를 최초 1회 자동 다운로드합니다. BGE 임베딩·리랭커와 Qwen 모델은 Docker 볼륨에 보존됩니다.
+이 기본 명령은 GPU가 없는 PC와 Codespaces에서 실행됩니다. 실제 RAG·계산을 사용하고 자연어 설명만 mock입니다.
+
+GPU PC에서 Qwen과 리랭커까지 활성화하려면:
+
+```powershell
+Copy-Item .env.gpu.example .env -Force
+docker compose -f compose.yaml -f compose.gpu.yaml up --build -d
+```
+
+GPU 구성에서는 `ollama-init`이 `qwen3:8b`를 최초 1회 자동 다운로드합니다. BGE·Qwen 모델과 세션은 Docker 볼륨에 보존됩니다.
 
 - API 문서: http://localhost:8000/docs
 - 상태 확인: http://localhost:8000/health

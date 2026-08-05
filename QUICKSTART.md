@@ -4,6 +4,28 @@
 
 ---
 
+## 0. Docker로 웹 전체 실행
+
+GPU가 없는 PC와 GitHub Codespaces를 포함해 기본 명령은 동일합니다.
+
+```bash
+cd ryeol
+docker compose up --build -d
+```
+
+기본 구성은 실제 RAG·계산·세션과 mock 설명을 사용합니다. Streamlit은 8501, FastAPI Swagger는 8000 포트입니다.
+
+NVIDIA GPU PC에서 Qwen과 GPU 리랭킹까지 사용하려면:
+
+```bash
+cd ryeol
+docker compose -f compose.yaml -f compose.gpu.yaml up --build -d
+```
+
+Codespaces의 자세한 실행법은 [`CODESPACES.md`](CODESPACES.md)를 참고하세요.
+
+---
+
 ## 1. 가상환경 만들기 (최초 1회)
 
 팀 전원이 **같은 파이썬(3.13) · 같은 패키지 버전**을 씁니다.
