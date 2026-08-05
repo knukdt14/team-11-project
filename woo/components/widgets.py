@@ -204,8 +204,50 @@ def inject_css() -> None:
         .stButton>button, .stChatInputContainer, div[data-baseweb="select"] {{
             border-radius:12px !important;
         }}
+        /* ⚠️ 좁은 컬럼(예: "↔ 반대쪽이에요" 버튼)에서 "이에"+"요"처럼 단어 중간에서
+           줄바꿈되던 문제 — 원인이 히어로 제목 때와 달랐습니다. 버튼 라벨은 Streamlit이
+           내부적으로 다시 마크다운 컴포넌트(<p>)로 렌더링하면서 그 <p> 자체에
+           word-break:break-word를 직접 박아넣기 때문에, .stButton>button에 준
+           word-break는 상속될 기회조차 없이 무시됩니다 — <p> 자신을 !important로
+           직접 덮어써야 합니다. */
+        .stButton>button p {{
+            word-break: keep-all !important; overflow-wrap: normal !important;
+        }}
         .stButton>button[kind="primary"] {{
             box-shadow: 0 4px 12px rgba(46,91,255,0.28);
+        }}
+
+        /* ── "안내문 박스 + 반대쪽 버튼" 같은 줄: 높이 맞추기 ────────── */
+        /* ⚠️ align-items:stretch + height:100% 체인으로 맞춰봤지만 Streamlit의
+           중첩 wrapper(stColumn>stVerticalBlock>stElementContainer>...) 어딘가에서
+           또 auto로 끊겨서 여전히 안 맞았습니다 — 부모 체인에 기대는 대신, 두 박스
+           자체에 똑같은 min-height를 직접 박아넣고 내용은 세로 중앙정렬하는 쪽이
+           훨씬 확실합니다(조상 높이가 어떻게 되든 상관없이 항상 이 값으로 고정됨). */
+        /* min-height는 "이 이상"이라 버튼 쪽 내용(2줄+패딩)이 78px을 실제로 넘어버려서
+           결국 버튼이 더 컸습니다 — 아예 height를 고정값으로 못박아 두 박스가 항상
+           똑같은 크기가 되도록 합니다. */
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="stAlertContainer"]):has(.stButton)
+            div[data-testid="stAlertContainer"] {{
+            height: 84px !important; box-sizing: border-box !important;
+            display: flex !important; align-items: center !important;
+        }}
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="stAlertContainer"]):has(.stButton)
+            .stButton>button {{
+            height: 84px !important; box-sizing: border-box !important;
+            display: flex !important; align-items: center !important; justify-content: center !important;
+        }}
+        /* ⚠️ 높이는 맞았는데도 위/아래 선이 계속 안 맞았던 이유 — 두 컬럼 안의
+           stElementContainer(각 요소를 감싸는 블록)가 기본적으로 위아래 margin을
+           갖고 있어서, 그 margin 크기가 안내문 쪽과 버튼 쪽이 서로 달라(내용물 종류가
+           다르니 Streamlit이 기본으로 주는 여백도 다름) 박스 자체는 높이가 같아도
+           시작 위치가 어긋났습니다. 이 줄에서만 그 여백을 0으로 눌러서 둘 다 컬럼
+           맨 위에서 시작하게 맞춥니다. */
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="stAlertContainer"]):has(.stButton)
+            div[data-testid="stElementContainer"] {{
+            margin: 0 !important;
+        }}
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="stAlertContainer"]):has(.stButton) {{
+            align-items: flex-start !important;
         }}
 
         /* ── 사이드바 브랜드 ─────────────────────────────────── */

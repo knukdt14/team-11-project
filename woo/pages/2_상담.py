@@ -197,7 +197,6 @@ with guide_col:
     # "내가 어느 쪽인지" 구분할 유일한 단서입니다 — 꼭 확인하도록 눈에 띄게 표시.
     st.info(f"**{result.get('안내문', '')}**", icon="🧭")
 with switch_col:
-    st.write("")
     other_side = "B" if consultant_side == "A" else "A"
     if st.button(f"↔ 반대쪽({other_side})이에요", use_container_width=True):
         with st.spinner("다시 계산하는 중..."):
