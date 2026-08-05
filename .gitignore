@@ -240,5 +240,11 @@ hani/*.txt
 data/jobs/
 *.mp4
 
+# CCD 데이터셋 (CarCrash) — 영상·feature 수십 GB, 저장소에 절대 안 올림
+CarCrash/
+**/CarCrash/
+*.npz
+!hani/data/**/*.npz
+
 # 환경
 .env
