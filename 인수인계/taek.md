@@ -98,7 +98,7 @@ to_law_cards(searcher.laws_for(payload["법조항"]))
 | `search.py` | 1번 — 기본 벡터 검색 | 하이브리드·거절 판정·라우팅·부모 병합 분리 |
 | `evaluate.py` | 1번 — 지표 계산 | 복수 정답(`;`)·모드 스위치·`matched_gold` |
 | `gold_queries.csv` | 1번 — 80문항 작성 | 라벨 3건 정정 (근거는 `EVAL.md` §EXP-1) |
-| `bm25.py` `synonyms.py` `adapter.py` `sweep.py` `validate_k.py` `paths.py` | — | 2번 신규 |
+| `bm25.py` `synonyms.py` `rerank.py` `adapter.py` `sweep.py` `validate_k.py` `paths.py` | — | 2번 신규 |
 
 파서 버그 2건(보행자 도표 수정요소 당사자 오배정, 해설 누락·오염)도 인계받아 고쳤습니다.
 이건 이미 `main` 에 머지됐습니다(이슈 #4·#5).
@@ -115,7 +115,15 @@ to_law_cards(searcher.laws_for(payload["법조항"]))
 | + RRF 융합 | 39.1% | 60.9% | 84.4% | 0.526 | 0.0% |
 | + 거절 임계값 | 39.1% | 60.9% | 82.8% | 0.523 | 81.2% |
 | + 질의 확장 | 42.2% | 64.1% | 84.4% | 0.558 | 81.2% |
-| **+ 메타 필터** | **46.9%** | **65.6%** | **87.5%** | **0.593** | **81.2%** |
+| + 메타 필터 | 46.9% | 65.6% | 87.5% | 0.593 | 81.2% |
+| **+ 리랭킹** | **54.7%** | **79.7%** | **92.2%** | **0.670** | **81.2%** |
+
+리랭킹은 **기본 OFF** 입니다. CPU 에서 요청당 6.9초라 GPU 없는 환경에서는 못 씁니다.
+GPU(RTX 4070)에서는 0.494초로 시연 가능합니다. 3번이 환경 보고 켜세요.
+
+```python
+hits = searcher.search(질문, mode="hybrid", reject=True, expand=True, rerank=True)
+```
 
 ### 이 숫자를 발표에 쓸 때 반드시 함께 말할 것
 
@@ -148,7 +156,6 @@ AND 로 묶으면 **손실 0으로 81.2%** 를 거릅니다. 두 신호가 서�
 
 | | 내용 |
 |---|---|
-| 리랭킹 | cross-encoder. 하이브리드 상한 70.3% 중 현재 65.6%. 남은 여지 |
 | 심의사례 매핑 | 226건 전부 `mapping_status="review_required"`. 현행 도표와 연결 안 됨 |
 | 재검증 | 3·4번 평가 문항 도착 시 전 설정 고정한 채 재측정 |
 | 4번과 협의 | 참고 사례 배지·검수필요 도표 표시 방식 |
@@ -159,11 +166,19 @@ AND 로 묶으면 **손실 0으로 81.2%** 를 거릅니다. 두 신호가 서�
 
 ```bash
 conda activate team-11-project        # Python 3.13
-python -m taek.evaluate --mode hybrid --reject --expand   # 성능 측정
+python -m taek.evaluate --mode hybrid --reject --expand --rerank   # 최종 구성
+python -m taek.evaluate --mode hybrid --reject --expand            # 리랭킹 없이 (CPU용)
 python -m taek.sweep                                      # 설정 18종 비교
 python -m taek.validate_k                                 # k 선택 통계 검증
 python -m taek.search "뒤에서 오던 차가 제 차를 들이받았어요"
 ```
+
+> 💡 **GPU 가 있으면** 리랭킹이 6.87초 → 0.494초가 됩니다. 검색 결과는 동일합니다.
+> ```
+> pip install --no-deps --force-reinstall --index-url https://download.pytorch.org/whl/cu126 torch==2.13.0
+> ```
+> `requirements.txt` 는 고치지 마세요 — 버전이 같아서 핀은 그대로 유효하고,
+> GPU 없는 팀원은 기본 설치로 CPU 를 받아야 합니다.
 
 > ⚠️ **Python 3.12 미만은 안 됩니다.** 코드가 f-string 안에서 백슬래시를 쓰는데
 > PEP 701(3.12+) 문법입니다. 3.11 에서는 `SyntaxError` 로 죽습니다.
@@ -178,6 +193,7 @@ python -m taek.search "뒤에서 오던 차가 제 차를 들이받았어요"
 taek/
 ├── search.py       Searcher — vector / bm25 / hybrid / wsum + 거절 · 라우팅
 ├── bm25.py         문자 2~3-gram BM25
+├── rerank.py       cross-encoder 리랭킹 (기본 OFF · GPU 권장)
 ├── synonyms.py     질의 확장 사전 (동결 — 점수 보고 고치면 과적합)
 ├── adapter.py      Hit → API 계약 변환   ★ 3번이 쓰는 지점
 ├── paths.py        hani/data 참조 단일 소스

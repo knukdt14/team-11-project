@@ -132,4 +132,31 @@ python build_chunks.py && python build_vector.py
 | `chunks.jsonl 이 인덱스를 만든 뒤에 바뀌었습니다` 경고 | `build_vector.py` 실행 |
 | `벡터 인덱스가 없습니다` | `hani/data/processed/vector_index/` 가 받아졌는지 확인 (Git LFS 아님, 일반 커밋) |
 | 모델 다운로드가 느림 | 최초 1회만. `EMBEDDING_DEVICE=cpu` 로 GPU 없이도 동작 |
-| GPU가 있는데 CPU로 돈다 | `requirements.txt` 의 torch는 **CPU 빌드**입니다. 필요하면 각자 CUDA 빌드로 교체 (인덱스 결과는 동일) |
+| GPU가 있는데 CPU로 돈다 | 아래 §7 참조. 검색 결과는 동일하고 속도만 달라집니다 |
+| 리랭킹이 너무 느림 | CPU에서 요청당 ~6.9초입니다. GPU로 바꾸거나 `rerank=False`(기본값)로 쓰세요 |
+
+---
+
+## 7. GPU 쓰기 (선택)
+
+`requirements.txt` 의 torch 는 **CPU 빌드**입니다. 팀 전원이 한 파일로 동일하게 설치되도록
+일부러 그렇게 뒀습니다. GPU가 있으면 각자 교체하세요.
+
+```bash
+pip install --no-deps --force-reinstall --index-url https://download.pytorch.org/whl/cu126 torch==2.13.0
+```
+
+```bash
+python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+```
+
+버전이 `2.13.0` 으로 같아서 **`requirements.txt` 를 고칠 필요가 없습니다.**
+
+측정된 차이 (요청 1건, 후보 20개):
+
+| | 리랭킹 OFF | 리랭킹 ON |
+|---|---:|---:|
+| CPU | ~0.57s | 6.87s |
+| GPU (RTX 4070 Laptop) | 0.098s | 0.494s |
+
+**검색 결과는 완전히 동일합니다.** 속도만 달라집니다.

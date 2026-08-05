@@ -140,6 +140,7 @@ class Searcher:
             json.loads(PAYLOAD.read_text(encoding="utf-8")) if PAYLOAD.exists() else {}
         )
         self._bm25 = None          # 지연 생성 — bm25/hybrid 모드에서만 만듭니다
+        self._reranker = None      # 지연 생성 — rerank=True 일 때만 (모델이 무겁습니다)
 
     # ------------------------------------------------------------------
     # 면(facet) → 부모(도표) 병합
@@ -213,6 +214,17 @@ class Searcher:
         self, query: str, n: int, kind: str | None, source_id: str | None,
     ) -> list[tuple[str, float, str, dict]]:
         return self.bm25.search(query, top_k=n, kind=kind, source_id=source_id)
+
+    @property
+    def reranker(self):
+        """cross-encoder 는 무거워서 rerank=True 로 처음 부를 때만 로드합니다."""
+        if self._reranker is None:
+            try:
+                from .rerank import Reranker
+            except ImportError:
+                from rerank import Reranker
+            self._reranker = Reranker()
+        return self._reranker
 
     # ------------------------------------------------------------------
     # 융합 (벡터 + BM25)
@@ -303,6 +315,7 @@ class Searcher:
         min_bm25: float | None = None,
         route: bool = True,
         only_computable: bool = True,
+        rerank: bool = False,
     ) -> list[Hit]:
         """
         kind='standard' 가 기본입니다. 법 조문까지 함께 보려면 kind=None.
@@ -331,6 +344,10 @@ class Searcher:
         only_computable
           기본과실이 없는 도표를 결과에서 뺍니다(243개 중 17개). 과실비율을 계산할 수
           없어 후보로 낼 의미가 없고, 평가셋에서 정답이 된 적도 0건입니다.
+
+        rerank
+          cross-encoder 로 상위 후보를 다시 정렬합니다. 정확하지만 **느립니다**.
+          모델은 처음 쓸 때만 로드합니다. 지연 시간은 EVAL.md §EXP-7 참조.
 
         expand
           True 면 질의에 문서 어휘를 덧붙입니다(킥보드 → PM 등). synonyms.py 참조.
@@ -400,6 +417,10 @@ class Searcher:
         if only_computable:
             결과 = [h for h in 결과 if h.kind != "standard"
                     or h.payload.get("base_ratio") or h.payload.get("base_ratio_variants")]
+
+        # 리랭킹은 필터링이 끝난 뒤에 합니다 — 걸러질 후보에 모델을 돌리는 건 낭비입니다.
+        if rerank and 결과:
+            return self.reranker.rerank(원질의, 결과, top_k=top_k)
         return 결과[:top_k]
 
     @staticmethod

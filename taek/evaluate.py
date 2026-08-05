@@ -69,12 +69,15 @@ def main() -> None:
                     help="특수기준 라우팅 끄기 (기본은 켜짐)")
     ap.add_argument("--keep-uncomputable", action="store_true",
                     help="기본과실 없는 도표도 후보에 포함 (기본은 제외)")
+    ap.add_argument("--rerank", action="store_true",
+                    help="cross-encoder 리랭킹 적용 (느림)")
     ap.add_argument("--expand", action="store_true",
                     help="질의 확장(동의어) 적용 — synonyms.py")
     a = ap.parse_args()
     if a.out is None:
         RESULTS.mkdir(parents=True, exist_ok=True)
         tag = a.mode + (f'_a{a.alpha}' if a.mode == 'wsum' else '') + ('_reject' if a.reject else '')
+        tag += '_rerank' if a.rerank else ''
         tag += f'_k{a.rrf_k}' if a.mode == 'hybrid' and a.rrf_k != 60 else ''
         a.out = RESULTS / f"eval_{tag}{'_expand' if a.expand else ''}.csv"
 
@@ -94,7 +97,8 @@ def main() -> None:
         hits = s.search(r["query"], top_k=a.top_k, mode=a.mode, expand=a.expand,
                         alpha=a.alpha, rrf_k=a.rrf_k, reject=a.reject,
                         route=not a.no_route,
-                        only_computable=not a.keep_uncomputable)
+                        only_computable=not a.keep_uncomputable,
+                        rerank=a.rerank)
         if a.threshold is not None:
             hits = [h for h in hits if h.score >= a.threshold]
         ids = [h.chunk_id for h in hits]
@@ -121,7 +125,8 @@ def main() -> None:
         hits = s.search(r["query"], top_k=a.top_k, mode=a.mode, expand=a.expand,
                         alpha=a.alpha, rrf_k=a.rrf_k, reject=a.reject,
                         route=not a.no_route,
-                        only_computable=not a.keep_uncomputable)
+                        only_computable=not a.keep_uncomputable,
+                        rerank=a.rerank)
         if a.threshold is not None:
             hits = [h for h in hits if h.score >= a.threshold]
         거절 += not hits
