@@ -1,0 +1,1102 @@
+[교통사고 과실비율 검색 시스템 - 한이-> 현택 인수인계서]
+
+ㅎㅎ
+
+이거는 요약해달라고 ai한테 부탁하시면 될듯용
+
+============================================================
+1. 현재 구현 완료 범위
+============================================================
+
+[완료]
+1) 공통 데이터 스키마 구현
+2) 자동차사고 과실비율 기준 PDF 파싱
+3) PM 사고 기준 PDF 파싱
+4) 회전교차로 사고 기준 PDF 파싱
+5) 과실비율분쟁 심의사례 PDF 파싱
+6) 도로교통법 PDF 파싱
+7) 파싱 결과 JSONL 생성
+8) 부모-자식 구조의 검색용 청크 생성
+9) SentenceTransformer 기반 임베딩
+10) Chroma PersistentClient 기반 벡터 인덱스 생성
+11) 메타데이터 조건을 지원하는 기본 벡터 검색
+12) 검색 결과를 부모 도표 단위로 통합하여 Top-K 출력
+13) 전체 파싱 → 청킹 → 벡터 생성 자동 실행 스크립트
+
+============================================================
+2. 프로젝트 폴더 기준
+============================================================
+
+권장 구조
+
+team-11-project/
+├─ hani/
+│  ├─ build_all.py
+│  ├─ build_chunks.py
+│  ├─ build_vector.py
+│  ├─ embedder.py
+│  ├─ parse_cases.py
+│  ├─ parse_law.py
+│  ├─ parse_pdf.py
+│  ├─ schema.py
+│  ├─ search.py
+│  └─ data/
+│     ├─ interim/
+│     └─ processed/
+└─ pdf/
+   ├─ 230630_자동차사고 과실비율 인정기준_최종.pdf
+   ├─ !!210624_PM대자동차사고과실비율비정형기준_송부(2021).pdf
+   ├─ 250624_2차로형 회전교차로사고 과실비율 비정형기준.pdf
+   ├─ (최종)과실비율심의사례_(54MB).pdf
+   └─ 도로교통법_법률__제21246호__20260701_.pdf
+
+중요
+- Python 파일은 hani 폴더 안에 둡니다.
+- PDF는 team-11-project/pdf 폴더에 둘 수 있습니다.
+- build_all.py는 hani/pdf가 없으면 상위 폴더의 pdf를 찾습니다.
+- data/interim과 data/processed는 hani 폴더 기준으로 생성됩니다.
+- Chroma 인덱스 경로에 한글 폴더명을 사용하지 않는 것이 안전합니다.
+- 현재 hani는 영문 폴더명이므로 그대로 사용하는 것을 권장합니다.
+
+
+============================================================
+3. 전체 데이터 흐름
+============================================================
+
+원본 PDF
+  ↓
+parse_pdf.py / parse_cases.py / parse_law.py
+  ↓
+data/interim/*.jsonl
+  ↓
+build_chunks.py
+  ↓
+data/processed/chunks.jsonl
+data/processed/payloads.json
+  ↓
+embedder.py + build_vector.py
+  ↓
+data/processed/vector_index/
+  ↓
+search.py
+  ↓
+Top-K 사고유형 검색 결과
+
+
+============================================================
+4. 파일별 상세 설명
+============================================================
+
+------------------------------------------------------------
+4-1. schema.py
+------------------------------------------------------------
+
+역할
+- 파싱 결과의 공통 데이터 계약을 정의합니다.
+- Pydantic을 사용하여 기본과실 합계, 수정요소 범위, 필수 필드 등을 검증합니다.
+
+주요 클래스
+
+1) Ratio
+- A차량과 B차량의 기본과실 비율을 저장합니다.
+- a, b 값은 0~100 범위입니다.
+- a + b가 100이 아니면 오류를 발생시킵니다.
+
+예시
+{
+  "a": 30,
+  "b": 70
+}
+
+2) Modifier
+- 수정요소 1건을 표현합니다.
+- target: A 또는 B
+- adjustment: 해당 차량 과실에 가감할 값
+- condition: 조건 분기
+- note_ref: 해설 번호
+
+예시
+{
+  "name": "현저한 과실",
+  "target": "A",
+  "adjustment": 10
+}
+
+3) Standard
+- 기준 도표 1건의 전체 구조입니다.
+- standard_id
+- source_id
+- diagram_no
+- section
+- title
+- party_a
+- party_b
+- base_ratio
+- base_ratio_variants
+- modifiers
+- accident_description
+- base_ratio_explanation
+- laws
+- precedents
+- legacy_nos
+- source_page
+- book_page
+- diagram_image
+- parse_flags
+
+생성 파일
+- schema.py 자체는 파일을 생성하지 않습니다.
+- parse_pdf.py가 추출한 데이터를 검증하고 일정한 형식으로 유지하는 기준으로 사용합니다.
+
+후속 담당자 주의
+- 검색 결과 payload의 필드 구조를 변경하려면 schema.py와 build_chunks.py를 함께 확인해야 합니다.
+- A/B 방향은 사고유형 기준에서 정의된 차량 역할이므로 사용자 차량과 바로 동일시하면 안 됩니다.
+
+
+------------------------------------------------------------
+4-2. parse_pdf.py
+------------------------------------------------------------
+
+역할
+- 과실비율 기준 PDF 3종을 파싱합니다.
+- 문서별 표기 방식이 다르기 때문에 Profile 구조로 파싱 규칙을 분리했습니다.
+
+지원 문서
+
+1) MAIN2023
+- 자동차사고 과실비율 인정기준
+- 도표번호 예: 차15-1, 보1, 거2
+- 기본과실 예: A30 B70
+
+2) PM2021
+- PM 대 자동차 사고 과실비율 비정형 기준
+- 도표번호 예: 20. 교차로 부근 사고
+- 기본과실 예: A 0 B 100
+
+3) ROUND2025
+- 2차로형 회전교차로 사고 과실비율 비정형 기준
+- 도표번호 예: 회전-8
+- 기본과실 예: 레드20 블루80
+
+주요 기능
+
+1) diagnose
+- PDF가 텍스트 기반인지 이미지 위주인지 진단합니다.
+- 페이지별 텍스트 길이와 이미지 개수를 확인합니다.
+
+실행 예시
+python parse_pdf.py diagnose "pdf/파일.pdf"
+
+2) index
+- 도표 시작 페이지와 도표번호를 찾습니다.
+- 목차나 본문 상호참조에 나온 번호를 실제 도표로 잘못 인식하지 않도록
+  기본과실 표기가 있는 페이지를 중심으로 판정합니다.
+
+실행 예시
+python parse_pdf.py index "pdf/파일.pdf" --source-id MAIN2023
+
+3) extract
+- 도표별 제목, A/B 차량 설명, 기본과실, 수정요소, 사고상황, 해설,
+  법령, 판례, 출처 페이지 등을 구조화합니다.
+
+실행 예시
+python parse_pdf.py extract "pdf/파일.pdf" --source-id MAIN2023
+
+생성 파일
+
+data/interim/MAIN2023_standards.jsonl
+data/interim/PM2021_standards.jsonl
+data/interim/ROUND2025_standards.jsonl
+
+각 줄
+- 기준 도표 1건
+- JSON 객체 1개
+
+후속 담당자 주의
+- parse_flags가 있는 데이터는 자동 파싱 이상 가능성이 있으므로 검수 대상입니다.
+- base_ratio가 없는 도표는 조건별 비율인 base_ratio_variants를 확인해야 할 수 있습니다.
+- source_page는 실제 PDF 페이지 번호입니다.
+- book_page는 책자에 표시된 페이지 번호입니다.
+
+
+------------------------------------------------------------
+4-3. parse_cases.py
+------------------------------------------------------------
+
+역할
+- 자동차사고 과실비율분쟁 심의사례 PDF를 파싱합니다.
+- 사례는 기준 계산용 데이터가 아니라 참고용 데이터로 분리합니다.
+
+왜 분리했는가
+- 기준의 기본과실과 실제 심의 결정비율이 다를 수 있습니다.
+- 사례의 결정비율을 기준 비율처럼 사용하면 과실 계산이 잘못될 수 있습니다.
+
+추출 항목
+- case_id
+- review_no
+- title
+- referenced_standard_original
+- referenced_standard_current
+- mapping_status
+- accident_description
+- base_ratio
+- a_party
+- b_party
+- decision_ratio
+- decision_reason
+- key_issues
+- source_page
+- page_span
+- parse_flags
+
+실행 예시
+python parse_cases.py "pdf/(최종)과실비율심의사례_(54MB).pdf"
+
+생성 파일
+
+data/interim/CASES_reviews.jsonl
+
+주의
+- A가 청구인인지 피청구인지는 사례마다 다릅니다.
+- a_party와 b_party를 반드시 함께 확인해야 합니다.
+- referenced_standard_current가 비어 있고 mapping_status가 review_required인 경우
+  구 기준번호와 현 기준번호 매핑 검수가 필요합니다.
+- 사례 결정비율은 상담 계산기의 기본과실로 직접 사용하지 않습니다.
+
+
+------------------------------------------------------------
+4-4. parse_law.py
+------------------------------------------------------------
+
+역할
+- 도로교통법 PDF에서 조문을 추출합니다.
+- 현행 조문과 아직 시행되지 않은 조문을 구분합니다.
+
+추출 항목
+- article_id
+- article_no
+- title
+- chapter
+- text
+- source_page
+- in_force
+- effective_from
+- has_variant
+
+실행 예시
+python parse_law.py "pdf/도로교통법_법률__제21246호__20260701_.pdf"
+
+생성 파일
+
+data/interim/ROADLAW_articles.jsonl
+
+특이사항
+- 같은 조문이 현행분과 미시행 개정분으로 두 번 들어 있을 수 있습니다.
+- 시행일 표기가 있는 미시행분은 in_force=False로 저장합니다.
+- build_chunks.py는 기본적으로 in_force=True인 현행 조문만 사용합니다.
+
+후속 담당자 주의
+- 법령 검색에서는 ROADLAW source_id를 사용할 수 있습니다.
+- 도표 payload의 laws 필드와 실제 조문 payload를 연결할 수 있습니다.
+
+
+------------------------------------------------------------
+4-5. build_chunks.py
+------------------------------------------------------------
+
+역할
+- 파싱된 JSONL을 검색용 청크와 화면 표시용 payload로 변환합니다.
+- 하나의 도표를 통째로 하나의 벡터로 만들지 않고 의미 단위 facet으로 나눕니다.
+
+왜 facet으로 나누었는가
+- 하나의 도표에는 제목, 사고 상황, 기본과실 해설, 수정요소가 섞여 있습니다.
+- 전체 내용을 하나의 벡터로 만들면 내용이 평균화되어 도표 간 유사도 차이가 작아집니다.
+- 질문과 가장 가까운 면을 별도로 검색할 수 있도록 분리했습니다.
+
+부모-자식 구조
+
+부모
+- 도표, 사례, 법 조문 1건
+- payloads.json에 전체 구조 저장
+
+자식
+- 검색용 텍스트 청크
+- chunks.jsonl에 저장
+- parent_id로 부모와 연결
+
+기준 도표 facet
+- 요약
+- 상황
+- 해설
+- 수정요소
+
+심의사례 facet
+- 요약
+- 상황
+- 결정이유
+
+법령 facet
+- 전문
+- 긴 조문은 항1, 항2, 항3 등으로 분할
+
+청크 필드
+- chunk_id
+- parent_id
+- facet
+- kind
+- source_id
+- text
+- meta
+
+실행
+python build_chunks.py
+
+입력 파일
+
+data/interim/MAIN2023_standards.jsonl
+data/interim/PM2021_standards.jsonl
+data/interim/ROUND2025_standards.jsonl
+data/interim/CASES_reviews.jsonl
+data/interim/ROADLAW_articles.jsonl
+
+생성 파일
+
+1) data/processed/chunks.jsonl
+- 임베딩 대상 청크
+- 한 줄에 청크 1개
+- 현재 정상 생성 기준 약 1,878건
+- 파일 크기가 0바이트이면 비정상입니다.
+
+2) data/processed/payloads.json
+- 부모 단위 상세 데이터
+- search.py가 검색 결과 상세 표시 시 사용합니다.
+- 도표번호, 기본과실, 수정요소, 법령, 판례, 페이지, 사고상황 등이 포함됩니다.
+
+주의
+- chunks.jsonl과 payloads.json은 서로 한 세트입니다.
+- build_chunks.py를 다시 실행하면 두 파일이 새로 생성됩니다.
+- 검색용 text에는 image_path를 넣지 않습니다.
+- 검색 성능 담당자는 chunks.jsonl의 text와 meta를 사용할 수 있습니다.
+
+
+------------------------------------------------------------
+4-6. embedder.py
+------------------------------------------------------------
+
+역할
+- 임베딩 백엔드를 공통 인터페이스로 제공합니다.
+
+지원 백엔드
+
+1) hash
+- 문자 3-gram 해싱 방식
+- 모델 다운로드 없이 작동
+- 파이프라인 연결 확인용
+- 의미 검색용 최종 모델로 사용하면 안 됩니다.
+
+2) st
+- SentenceTransformer 기반
+- 기본 모델: BAAI/bge-m3
+- 운영 및 성능 평가용
+- GPU가 있으면 자동으로 CUDA 사용
+- CUDA 환경 기본 batch=32
+
+환경변수
+
+EMBEDDING_BACKEND
+- hash 또는 st
+
+EMBEDDING_MODEL
+- 예: BAAI/bge-m3
+
+EMBEDDING_DEVICE
+- cuda 또는 cpu
+- 미설정 시 자동 판정
+
+EMBEDDING_BATCH
+- GPU 메모리 부족 시 16, 8 등으로 낮출 수 있습니다.
+
+사용 예시
+
+CMD
+set EMBEDDING_BACKEND=st
+set EMBEDDING_MODEL=BAAI/bge-m3
+set EMBEDDING_BATCH=32
+
+중요
+- 인덱스를 만들 때와 검색할 때 반드시 같은 임베딩 백엔드와 모델을 사용해야 합니다.
+- BAAI/bge-m3 출력 차원은 1024입니다.
+- normalize_embeddings=True로 L2 정규화된 벡터를 생성합니다.
+
+
+------------------------------------------------------------
+4-7. build_vector.py
+------------------------------------------------------------
+
+역할
+- chunks.jsonl의 모든 검색용 텍스트를 임베딩합니다.
+- Chroma PersistentClient에 저장합니다.
+- 기존 fault_ratio 컬렉션이 있으면 삭제 후 새로 생성합니다.
+
+입력 파일
+
+data/processed/chunks.jsonl
+data/processed/payloads.json
+
+실행
+
+CMD
+set EMBEDDING_BACKEND=st
+set EMBEDDING_MODEL=BAAI/bge-m3
+python build_vector.py
+
+처리 과정
+
+1) chunks.jsonl 로드
+2) embedder.py에서 임베더 생성
+3) 모든 text 임베딩
+4) data/processed/vector_index 폴더 생성
+5) Chroma PersistentClient 연결
+6) 기존 fault_ratio 컬렉션 삭제
+7) cosine 공간 컬렉션 생성
+8) chunk_id, document, embedding, metadata 저장
+
+생성 결과
+
+data/processed/vector_index/
+
+정상 출력 예시
+
+임베딩 백엔드: st:BAAI/bge-m3 (dim=1024)
+1878건 임베딩 중...
+완료: ...\data\processed\vector_index | 1878건
+
+컬렉션 정보
+- collection name: fault_ratio
+- distance: cosine
+- metadata에 embedder 이름과 차원을 저장
+
+주의
+- chunks.jsonl 크기가 0이면 임베딩할 데이터가 없습니다.
+- vector_index를 다른 경로로 복사하거나 강제 이동한 뒤 버전이 달라지면 HNSW 로딩 오류가 날 수 있습니다.
+- 인덱스가 손상되거나 로딩 오류가 발생하면 vector_index 폴더를 삭제하고 build_vector.py를 다시 실행합니다.
+- Windows에서 한글 경로보다 영문 경로 사용을 권장합니다.
+
+
+------------------------------------------------------------
+4-8. search.py
+------------------------------------------------------------
+
+역할
+- 기본 벡터 검색을 수행합니다.
+- 담당 범위는 질문을 넣었을 때 후보 도표를 반환하는 것까지입니다.
+
+실행 예시
+
+CMD
+set EMBEDDING_BACKEND=st
+set EMBEDDING_MODEL=BAAI/bge-m3
+python search.py "뒤에서 추돌당했습니다"
+
+검색 흐름
+
+1) Chroma PersistentClient 연결
+2) fault_ratio 컬렉션 로드
+3) 질문을 동일 임베더로 벡터화
+4) Chroma query 실행
+5) facet 단위 후보를 넓게 조회
+6) parent_id 기준으로 부모 도표 단위 통합
+7) 부모별 가장 높은 facet 점수를 대표 점수로 사용
+8) Top-K 정렬 후 출력
+
+기본값
+- top_k=5
+- kind="standard"
+- 기준 도표만 기본 검색
+- source_id 필터 가능
+
+검색 결과 Hit 필드
+- chunk_id: 부모 ID
+- score: 유사도
+- kind: standard, case, law
+- text: 최고 점수 facet의 원문
+- payload: 부모 상세 정보
+- facet: 최고 점수 facet 이름
+- facets: facet별 점수
+
+점수 계산
+- Chroma cosine distance를 1 - distance로 변환
+- 확률이 아니라 벡터 유사도 점수입니다.
+
+현재 정상 검색 예시
+
+질문
+뒤에서 추돌당했습니다
+
+1위
+차41-1 양 차량 주행 중 후방 추돌
+A100:B0
+
+의미
+- 1위 후보는 정상적으로 잡힙니다.
+- 짧은 질문은 사고 조건이 부족하므로 2~5위에 다른 선행/후행 사고가 섞일 수 있습니다.
+- 이를 개선하는 하이브리드 검색, 리랭킹, 검색 평가 기능은 2번 담당 범위입니다.
+
+사용 예시
+
+Python
+from search import Searcher
+
+s = Searcher()
+
+hits = s.search(
+    "신호대기 중 정차해 있었는데 뒤차가 후면을 추돌했습니다",
+    top_k=5,
+    kind="standard",
+    source_id="MAIN2023",
+)
+
+for hit in hits:
+    print(hit.chunk_id, hit.score, hit.facet)
+
+법령 조회
+- laws_for(article_nos)를 통해 도표 payload의 laws 목록에 해당하는 조문을 직접 조회할 수 있습니다.
+
+
+------------------------------------------------------------
+4-9. build_all.py
+------------------------------------------------------------
+
+역할
+- 전체 데이터 파이프라인을 한 번에 실행합니다.
+
+실행
+python build_all.py
+
+실행 순서
+
+1) MAIN2023 PDF 파싱
+2) PM2021 PDF 파싱
+3) ROUND2025 PDF 파싱
+4) 심의사례 PDF 파싱
+5) 도로교통법 PDF 파싱
+6) build_chunks.py 실행
+7) build_vector.py 실행
+
+생성 결과
+
+data/interim/
+├─ MAIN2023_standards.jsonl
+├─ PM2021_standards.jsonl
+├─ ROUND2025_standards.jsonl
+├─ CASES_reviews.jsonl
+└─ ROADLAW_articles.jsonl
+
+data/processed/
+├─ chunks.jsonl
+├─ payloads.json
+└─ vector_index/
+
+PDF 파일명이 다른 경우
+- build_all.py 상단 PDFS 딕셔너리의 파일명만 수정합니다.
+
+주의
+- build_all.py 실행 전에 EMBEDDING_BACKEND와 EMBEDDING_MODEL 환경변수를 설정하는 것이 좋습니다.
+- 설정하지 않으면 embedder.py 기본값에 따라 hash 백엔드가 사용될 수 있습니다.
+- 운영 인덱스는 st:BAAI/bge-m3로 다시 생성해야 합니다.
+
+
+============================================================
+5. 전체 실행 방법
+============================================================
+
+------------------------------------------------------------
+5-1. 가상환경 활성화
+------------------------------------------------------------
+
+현재 사용 중인 공용 가상환경
+
+C:\Users\KDT30\Desktop\team-01-project\.venv
+
+CMD
+
+cd /d C:\Users\KDT30\Desktop\team-11-project\hani
+C:\Users\KDT30\Desktop\team-01-project\.venv\Scripts\activate
+
+확인
+
+where python
+python -c "import sys; print(sys.executable)"
+
+정상 경로
+
+C:\Users\KDT30\Desktop\team-01-project\.venv\Scripts\python.exe
+
+
+------------------------------------------------------------
+5-2. 파싱 결과가 이미 있는 경우
+------------------------------------------------------------
+
+CMD
+
+cd /d C:\Users\KDT30\Desktop\team-11-project\hani
+
+python build_chunks.py
+
+rmdir /s /q data\processed\vector_index
+
+set EMBEDDING_BACKEND=st
+set EMBEDDING_MODEL=BAAI/bge-m3
+set EMBEDDING_BATCH=32
+
+python build_vector.py
+python search.py "뒤에서 추돌당했습니다"
+
+
+------------------------------------------------------------
+5-3. 처음부터 전체 재생성
+------------------------------------------------------------
+
+CMD
+
+cd /d C:\Users\KDT30\Desktop\team-11-project\hani
+
+set EMBEDDING_BACKEND=st
+set EMBEDDING_MODEL=BAAI/bge-m3
+set EMBEDDING_BATCH=32
+
+python build_all.py
+
+검색 확인
+
+python search.py "뒤에서 추돌당했습니다"
+
+
+============================================================
+6. 정상 동작 확인 기준
+============================================================
+
+1) data/interim 파일이 생성되어야 합니다.
+
+2) data/processed/chunks.jsonl이 0바이트가 아니어야 합니다.
+- 현재 데이터 기준 약 1,878건
+
+3) data/processed/payloads.json이 존재해야 합니다.
+
+4) build_vector.py 완료 메시지에서 Chroma 건수가 청크 수와 같아야 합니다.
+
+예시
+완료: ...vector_index | 1878건
+
+5) search.py 실행 시 1위 후보가 질문에 맞는 사고유형이어야 합니다.
+
+예시 질문
+뒤에서 추돌당했습니다
+
+예상 1위
+차41-1 양 차량 주행 중 후방 추돌
+
+
+============================================================
+7. 자주 발생한 오류와 해결
+============================================================
+
+------------------------------------------------------------
+7-1. chunks.jsonl이 0바이트
+------------------------------------------------------------
+
+증상
+dir data\processed 결과에서 chunks.jsonl 크기가 0
+
+원인
+- 빈 파일로 덮어쓰기
+- data/interim이 비어 있는 상태에서 build_chunks.py 실행
+- 다른 폴더의 data를 잘못 사용
+
+해결
+
+python build_chunks.py
+dir data\processed
+
+build_chunks.py 실행 후에도 0이면 data/interim을 확인하고 전체 재생성
+
+python build_all.py
+
+
+------------------------------------------------------------
+7-2. Error loading hnsw index
+------------------------------------------------------------
+
+증상
+
+chromadb.errors.InternalError
+Error loading hnsw index
+
+원인 후보
+- vector_index 손상
+- 인덱스 생성 후 경로 변경
+- Chroma 버전 차이
+- Windows 한글 경로 문제
+- 생성 도중 비정상 종료
+
+해결
+
+rmdir /s /q data\processed\vector_index
+
+set EMBEDDING_BACKEND=st
+set EMBEDDING_MODEL=BAAI/bge-m3
+
+python build_vector.py
+
+현재 hani 영문 폴더로 변경한 뒤 정상 검색이 확인되었습니다.
+
+
+------------------------------------------------------------
+7-3. 인덱스 백엔드와 검색 백엔드 불일치
+------------------------------------------------------------
+
+증상
+
+인덱스는 st:BAAI/bge-m3로 만들었는데
+질의는 hash로 실행되었다는 경고
+
+해결
+검색 전 환경변수 재설정
+
+set EMBEDDING_BACKEND=st
+set EMBEDDING_MODEL=BAAI/bge-m3
+
+python search.py "질문"
+
+
+------------------------------------------------------------
+7-4. 가상환경 표시가 사라짐
+------------------------------------------------------------
+
+원인
+- 새 CMD 창을 열면 가상환경 활성화가 해제됩니다.
+- 가상환경은 터미널 세션 단위입니다.
+
+해결
+
+C:\Users\KDT30\Desktop\team-01-project\.venv\Scripts\activate
+
+
+============================================================
+8. 2번 검색 성능 담당자에게 전달할 내용
+============================================================
+
+1번 담당자가 제공하는 것
+- 구조화된 기준 데이터
+- 구조화된 심의사례 데이터
+- 구조화된 현행 법령 데이터
+- 검색용 facet 청크
+- 부모 payload
+- BGE-M3 Chroma 인덱스
+- 기본 벡터 검색 Searcher 클래스
+- source_id와 kind 메타데이터 필터 기반
+
+2번 담당자가 이어서 구현할 것
+
+1) 키워드 검색
+- BM25 또는 형태소 기반 검색
+- chunks.jsonl의 text 사용 가능
+
+2) 하이브리드 검색
+- BM25 점수 + 벡터 점수 결합
+- RRF 또는 정규화 가중합 사용 가능
+
+3) 메타데이터 필터 고도화
+- kind
+- source_id
+- party_prefix
+- has_base_ratio
+- review_no
+- article_no
+- in_force
+
+4) 리랭킹
+- 벡터 검색 상위 20~50개 후보를 Cross Encoder로 재정렬
+- 예: BAAI/bge-reranker-v2-m3
+
+5) 성능 평가
+- 팀 공통 검색 질문 20개 이상
+- 정답 도표 ID 또는 정답 후보 집합 지정
+- Top-1 Accuracy
+- Top-3 Accuracy
+- MRR
+
+6) 유사 판례 검색
+- Searcher.search(..., kind="case")
+- 사례는 참고용이며 계산에 직접 사용하지 않도록 표시
+
+7) 관련 법령 검색
+- Searcher.search(..., kind="law")
+- 또는 도표 payload의 laws 목록을 Searcher.laws_for()로 직접 조회
+
+8) 검색 실패 및 범위 밖 판정
+- 최고 점수 임계값
+- 1위와 2위 점수 차이
+- 필수 사고조건 누락
+- 범위 밖 키워드
+- 검색 결과 없음
+
+중요
+- 1번 담당 코드의 search.py는 기본 벡터 검색 기준선입니다.
+- search.py 자체를 무리하게 수정하기보다 새 파일을 만드는 방식을 권장합니다.
+
+권장 추가 파일
+
+keyword_search.py
+hybrid_search.py
+reranker.py
+evaluate_search.py
+search_service.py
+
+기존 search.py는 baseline으로 유지해야 비교 평가가 가능합니다.
+
+
+============================================================
+9. 3번 API 담당자에게 전달할 내용
+============================================================
+
+사용할 핵심 인터페이스
+
+from search import Searcher
+
+s = Searcher()
+hits = s.search(query, top_k=5, kind="standard")
+
+각 hit에서 사용할 정보
+
+hit.chunk_id
+- 기준 도표 ID
+
+hit.score
+- 벡터 유사도
+
+hit.facet
+- 가장 잘 맞은 면
+
+hit.text
+- 최고 점수 면의 원문
+
+hit.payload
+- 전체 도표 정보
+
+hit.payload 주요 필드
+
+diagram_no
+title
+party_a
+party_b
+base_ratio
+base_ratio_variants
+modifiers
+laws
+precedents
+accident_description
+base_ratio_explanation
+source_page
+book_page
+image_path
+parse_flags
+
+계산 주의
+- 심의사례 decision_ratio를 기본과실로 사용하지 않습니다.
+- 기준 도표의 base_ratio 또는 base_ratio_variants를 사용합니다.
+- 사용자 차량이 A인지 B인지 추가정보로 확인해야 합니다.
+- modifiers는 target 차량의 과실에 adjustment를 가감하는 구조입니다.
+- 수정 후 A+B=100이 되도록 계산 규칙을 명확히 구현해야 합니다.
+
+
+============================================================
+10. 4번 UI 담당자에게 전달할 내용
+============================================================
+
+화면에 표시 가능한 정보
+
+1) 예상 사고유형
+- title
+- diagram_no
+
+2) 기본과실
+- base_ratio
+- base_ratio_variants
+
+3) A/B 차량 설명
+- party_a
+- party_b
+
+4) 사고상황 원문
+- accident_description
+
+5) 수정요소
+- modifiers
+
+6) 관련 법령
+- laws
+
+7) 참고 판례
+- precedents
+
+8) 출처
+- source_id
+- source_page
+- book_page
+
+9) 도표 이미지
+- image_path
+- 파일이 실제 존재하는지 확인 필요
+
+UI 주의
+- 검색 점수는 확률로 표시하지 않습니다.
+- “유사도” 또는 “검색 점수”로 표시합니다.
+- 사례는 “참고 사례”로 구분합니다.
+- 기본과실과 최종 계산과실을 구분합니다.
+- A/B 차량 역할을 사용자에게 명확히 확인받아야 합니다.
+
+
+============================================================
+11. 현재 검색 품질에 대한 설명
+============================================================
+
+현재 확인한 질문
+
+뒤에서 추돌당했습니다
+
+검색 결과
+1위: 차41-1 양 차량 주행 중 후방 추돌
+2~5위: 선행/후행, 진로변경, 추월 등 연관 사고 후보
+
+판단
+- 기본 벡터 검색은 정상입니다.
+- 1위 후보는 정확하게 검색됩니다.
+- 질문이 매우 짧으면 사고 조건이 부족해 유사한 선행/후행 사고가 함께 검색됩니다.
+- 이 문제는 데이터 인덱싱 오류가 아니라 검색 성능 고도화 영역입니다.
+
+성능 개선은 2번 담당
+- 질문 확장
+- BM25
+- 하이브리드 검색
+- 리랭킹
+- 메타데이터 필터
+- 검색 실패 판정
+- 평가 지표 작성
+
+
+============================================================
+12. GitHub 커밋 권장 파일
+============================================================
+
+반드시 커밋
+
+hani/build_all.py
+hani/build_chunks.py
+hani/build_vector.py
+hani/embedder.py
+hani/parse_cases.py
+hani/parse_law.py
+hani/parse_pdf.py
+hani/schema.py
+hani/search.py
+인수인계_1번_데이터검색담당.txt
+
+상황에 따라 커밋
+
+hani/data/interim/*.jsonl
+hani/data/processed/chunks.jsonl
+hani/data/processed/payloads.json
+
+커밋 비권장
+
+hani/data/processed/vector_index/
+- 용량이 크고 Chroma 버전 및 운영체제에 따라 재사용 문제가 생길 수 있습니다.
+- 가능하면 각 환경에서 build_vector.py로 재생성합니다.
+
+PDF 원본
+- 용량과 저작권, GitHub 파일 제한을 확인합니다.
+- 대용량이면 Git LFS 또는 별도 공유 경로를 사용합니다.
+
+.gitignore 권장 예시
+
+.venv/
+__pycache__/
+*.pyc
+data/processed/vector_index/
+.env
+.DS_Store
+
+
+============================================================
+13. requirements 참고
+============================================================
+
+필요 주요 패키지
+
+pydantic
+pymupdf
+chromadb
+sentence-transformers
+torch
+tqdm
+
+설치 예시
+
+pip install pydantic pymupdf chromadb sentence-transformers torch tqdm
+
+주의
+- CUDA용 PyTorch는 팀 개발환경에 맞는 설치 명령을 별도로 사용해야 합니다.
+- 기존 공용 가상환경을 사용할 경우 패키지 버전을 먼저 확인합니다.
+
+확인 명령
+
+python -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"
+python -c "import chromadb; print(chromadb.__version__)"
+python -c "import sentence_transformers; print(sentence_transformers.__version__)"
+
+
+============================================================
+14. 최종 인수인계 요약
+============================================================
+
+1번 담당 완료 상태
+
+- PDF 5종 파싱 경로 구현 완료
+- 기준, 사례, 법령 데이터 분리 완료
+- 공통 스키마 및 검증 구조 구현 완료
+- JSONL 중간 산출물 생성 완료
+- 부모-자식 facet 청킹 완료
+- BGE-M3 임베딩 완료
+- Chroma 벡터 저장 완료
+- 기본 벡터 검색 완료
+- 전체 자동 실행 스크립트 완료
+- SQLite는 제외
+
+후속 작업 방향
+
+2번 담당
+- 검색 성능 고도화 및 평가
+
+3번 담당
+- 검색 결과를 FastAPI 상담 및 계산 로직에 연결
+
+4번 담당
+- 검색·계산 결과를 Streamlit UI에 표시하고 Docker 통합
+
+핵심 실행 명령
+
+cd /d C:\Users\KDT30\Desktop\team-11-project\hani
+C:\Users\KDT30\Desktop\team-01-project\.venv\Scripts\activate
+
+set EMBEDDING_BACKEND=st
+set EMBEDDING_MODEL=BAAI/bge-m3
+set EMBEDDING_BATCH=32
+
+python build_chunks.py
+rmdir /s /q data\processed\vector_index
+python build_vector.py
+python search.py "뒤에서 추돌당했습니다"
+
+정상 검색 확인
+- 1위에 차41-1 후방 추돌 사고유형이 나오면 기본 파이프라인이 정상입니다.
