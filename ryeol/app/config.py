@@ -11,6 +11,7 @@ class Settings:
     ollama_model: str = os.getenv("OLLAMA_MODEL", "qwen3:8b")
     search_rerank: bool = os.getenv("SEARCH_RERANK", "true").lower() in {"1", "true", "yes"}
     llm_timeout: float = float(os.getenv("LLM_TIMEOUT", "180"))
+    session_db_path: str = os.getenv("SESSION_DB_PATH", "ryeol/runtime/sessions.sqlite3")
 
 
 settings = Settings()

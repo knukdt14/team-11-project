@@ -14,6 +14,7 @@ class Ratio(BaseModel):
         return self
 
 class Modifier(BaseModel):
+    id: str = ""
     조건: str
     대상: Side
     값: int = Field(ge=-100, le=100)
@@ -37,6 +38,11 @@ class RecalculateRequest(BaseModel):
 class FollowUpRequest(BaseModel):
     session_id: str
     질문: str = Field(min_length=1, max_length=2000)
+
+class AdditionalInfoRequest(BaseModel):
+    session_id: str
+    추가정보: str = Field(min_length=2, max_length=2000)
+    적용할_수정요소: list[str] = Field(default_factory=list)
 
 class FollowUpResponse(BaseModel):
     session_id: str

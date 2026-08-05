@@ -384,6 +384,9 @@ S7 주석 렌더       바운딩박스·ID·궤적·충돌마커·특징배지 �
 | GET | `/media/{job_id}/annotated.mp4` | 주석 영상 (StaticFiles) | ⬜ |
 | GET | `/media/{job_id}/frames/{n}.jpg` | 충돌 순간 프레임 3컷 | ⬜ |
 | POST | `/consult` | 상담 (결정론적 파이프라인) — **시연 기본 경로** | ✅ |
+| POST | `/consult/additional-info` | 되묻기 답변 반영 후 재검색 | ✅ |
+| POST | `/follow-up` | 최신 계산 결과 기반 후속 질문 | ✅ |
+| GET | `/sessions/{session_id}` | 세션 대화 이력 조회 | ✅ |
 | POST | `/consult/agent` | 상담 (에이전트 tool calling) | ⬜ |
 | POST | `/recalculate` | 수정요소 토글 재계산 (LLM 미사용) | ✅ |
 | POST | `/kb/ingest` | PDF 업로드 → 청킹 → 벡터스토어 추가 | ⬜ |

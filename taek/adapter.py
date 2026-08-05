@@ -51,15 +51,23 @@ def _diagram(h: Hit, consultant_side: str) -> dict[str, Any]:
         "상대_역할": view.get("상대_역할"),
         "기본과실": {"A": 기본.get("a"), "B": 기본.get("b")} if 기본 else None,
         "수정요소": [
-            {"조건": m.get("name"), "대상": m.get("target"), "값": m.get("adjustment"),
+            {"id": f"{p.get('source_id')}-{p.get('diagram_no')}-M{i:02d}",
+             "조건": m.get("name"), "대상": m.get("target"), "값": m.get("adjustment"),
              "적용됨": False, "근거": f"인정기준 p.{p.get('source_page')}"}
-            for m in (view.get("수정요소") or [])
+            for i, m in enumerate((view.get("수정요소") or []), 1)
         ],
         "해설": p.get("base_ratio_explanation", ""),
         "사고상황": p.get("accident_description", ""),
+        "사고유형": {
+            "대": "보행자 대 자동차" if p.get("diagram_no", "").startswith("보") else
+                  "자전거 대 자동차" if p.get("diagram_no", "").startswith("거") else
+                  "PM 대 자동차" if p.get("source_id") == "PM2021" else "차 대 차",
+            "중": p.get("section", "") or "",
+            "소": p.get("title", "") or "",
+        },
         "판례": p.get("precedents", []),
         "법조항": p.get("laws", []),
-        "image_url": f"/images/{p.get('diagram_no')}.png" if p.get("image_path") else None,
+        "image_url": f"/images/{p.get('source_id')}-{p.get('diagram_no')}.png" if p.get("image_path") else None,
         "pdf_page": p.get("source_page"),
         "검색점수": h.score,
         "매칭면": h.facet,

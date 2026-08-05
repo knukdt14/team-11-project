@@ -9,11 +9,13 @@ def apply_modifiers(base_ratio: Ratio, modifiers: list[Modifier], selected_condi
     applied, skipped = [], []
     for modifier in modifiers:
         current = modifier.model_copy(deep=True)
-        if current.조건 not in selected or current.조건 in seen:
+        key = current.id or current.조건
+        chosen = key in selected or current.조건 in selected
+        if not chosen or key in seen:
             current.적용됨 = False
             skipped.append(current)
             continue
-        seen.add(current.조건)
+        seen.add(key)
         a = min(100, max(0, a + (current.값 if current.대상 == "A" else -current.값)))
         current.적용됨 = True
         applied.append(current)

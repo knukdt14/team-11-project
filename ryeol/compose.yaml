@@ -12,6 +12,17 @@ services:
       timeout: 5s
       retries: 20
 
+  ollama-init:
+    image: ollama/ollama:latest
+    entrypoint: ["ollama"]
+    command: ["pull", "${OLLAMA_MODEL:-qwen3:8b}"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
   backend:
     build:
       context: ..
@@ -24,11 +35,17 @@ services:
       OLLAMA_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
       SEARCH_RERANK: ${SEARCH_RERANK:-true}
+      HF_HOME: /cache/huggingface
+      SESSION_DB_PATH: /runtime/sessions.sqlite3
+    gpus: all
+    volumes:
+      - ryeol-hf-cache:/cache/huggingface
+      - ryeol-runtime:/runtime
     ports:
       - "8000:8000"
     depends_on:
-      ollama:
-        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
@@ -50,3 +67,5 @@ services:
 
 volumes:
   ryeol-ollama:
+  ryeol-hf-cache:
+  ryeol-runtime:
