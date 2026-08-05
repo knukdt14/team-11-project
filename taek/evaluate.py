@@ -58,10 +58,12 @@ def main() -> None:
                     help="이 점수 미만이면 후보 없음으로 처리 (미지정 시 필터 없음)")
     ap.add_argument("--mode", default="vector", choices=["vector", "bm25"],
                     help="검색 방식 (기본 vector)")
+    ap.add_argument("--expand", action="store_true",
+                    help="질의 확장(동의어) 적용 — synonyms.py")
     a = ap.parse_args()
     if a.out is None:
         RESULTS.mkdir(parents=True, exist_ok=True)
-        a.out = RESULTS / f"eval_{a.mode}.csv"
+        a.out = RESULTS / f"eval_{a.mode}{'_expand' if a.expand else ''}.csv"
 
     rows = list(csv.DictReader(a.gold.open(encoding="utf-8-sig")))
     s = Searcher()
@@ -76,7 +78,7 @@ def main() -> None:
     print("-" * 80)
 
     for r in 답있음:
-        hits = s.search(r["query"], top_k=a.top_k, mode=a.mode)
+        hits = s.search(r["query"], top_k=a.top_k, mode=a.mode, expand=a.expand)
         if a.threshold is not None:
             hits = [h for h in hits if h.score >= a.threshold]
         ids = [h.chunk_id for h in hits]
@@ -100,7 +102,7 @@ def main() -> None:
     # 기준 없는 질문 — 아무것도 안 내놔야 정답
     거절 = 0
     for r in 답없음:
-        hits = s.search(r["query"], top_k=a.top_k, mode=a.mode)
+        hits = s.search(r["query"], top_k=a.top_k, mode=a.mode, expand=a.expand)
         if a.threshold is not None:
             hits = [h for h in hits if h.score >= a.threshold]
         거절 += not hits
@@ -118,7 +120,7 @@ def main() -> None:
     mrr = sum(1 / x for x in ranks if x) / n if n else 0
 
     print("\n" + "=" * 46)
-    print(f"검색 방식   : {a.mode}")
+    print(f"검색 방식   : {a.mode}{' + 질의확장' if a.expand else ''}")
     print(f"임베딩      : {s.embedder.name}")
     if a.threshold is not None:
         print(f"점수 임계값 : {a.threshold}")
