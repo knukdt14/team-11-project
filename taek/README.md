@@ -22,7 +22,9 @@ python -m taek.bm25 "회전교차로 차로변경"
 ```
 
 ```bash
-python -m taek.evaluate --mode bm25
+python -m taek.evaluate --mode hybrid --reject --expand    # 권장 구성
+python -m taek.sweep                                       # 설정 비교표
+python -m taek.validate_k                                  # k 선택 통계 검증
 ```
 
 > ⚠️ `cd taek && python search.py` 는 동작하지 않습니다.
@@ -37,7 +39,12 @@ python -m taek.evaluate --mode bm25
 | `paths.py` | `hani/data` 참조 단일 소스. 데이터 위치가 바뀌면 **여기만** 고칩니다 |
 | `search.py` | `Searcher` — 면(facet) 검색 → 부모(도표) 병합. `mode="vector"\|"bm25"` |
 | `bm25.py` | 문자 2~3-gram 토크나이저 + BM25 색인 |
+| `rerank.py` | cross-encoder 리랭킹 (기본 OFF · GPU 권장) |
+| `synonyms.py` | 질의 확장 사전 (킥보드→PM 등). **동결** — 점수 보고 고치면 과적합 |
+| `adapter.py` | **`Hit` → README §11 API 계약 변환 (3번 인도 지점)** |
 | `evaluate.py` | Top-1·3·10 / MRR / 오답 방지율 측정 |
+| `sweep.py` | 설정 18종 일괄 비교 |
+| `validate_k.py` | 부트스트랩 신뢰구간 · 반분 선택 검증 |
 | `gold_queries.csv` | 평가셋 20문항 (정답 14 / 정답 없음 6) |
 | `EVAL.md` | **실험 기록 — EXP-0~2 결과와 판단 근거** |
 | `results/` | 실험별 상세 CSV (`eval_vector.csv`, `eval_bm25.csv`) |
@@ -58,33 +65,72 @@ python -m taek.evaluate --mode bm25
 
 ---
 
-## 3번(정우렬)에게
+## 3번(정우렬)에게 — 이것만 쓰시면 됩니다
 
 ```python
 from taek.search import Searcher
-from hani.party import to_consultant_view, describe
+from taek.adapter import to_consult_payload, to_case_cards, to_law_cards
 
 searcher = Searcher()          # ⚠️ FastAPI lifespan 에서 1회만 생성
-hits = searcher.search("신호 없는 교차로에서 좌회전 차와 충돌")
 
-payload = hits[0].payload
-print(describe(payload))
-view = to_consultant_view(payload, consultant_side="A")
+hits = searcher.search(질문, mode="hybrid", reject=True, expand=True)
+payload = to_consult_payload(hits, consultant_side="A")   # 상담자가 A인지 B인지
+
+if payload["경고"]:            # 거절됨 = "해당 기준을 찾을 수 없습니다"
+    return {**payload}         # 최종과실 None, 되묻기[] 가 들어 있습니다
+
+# payload 에 도표번호·기본과실·수정요소·후보·해설·판례·법조항·image_url 이 들어 있습니다.
+# ⚠️ 최종과실은 None 입니다 — 숫자는 3번의 apply_modifiers() 만 만듭니다.
 ```
 
-**A/B를 직접 뒤집지 마세요.** `to_consultant_view()` 한 곳에서만 뒤집습니다.
+참고 사례와 법조항:
+
+```python
+to_case_cards(searcher.cases(질문))            # ⚠️ 참고용. 계산 금지
+to_law_cards(searcher.laws_for(payload["법조항"]))
+```
+
+**A/B를 직접 뒤집지 마세요.** `adapter.py` 가 `hani.party.to_consultant_view()` 한 곳으로만 넘깁니다.
+두 곳에서 뒤집으면 원위치로 돌아와 조용히 틀립니다.
+
+> ⚠️ **심의사례의 A/B 는 도표의 A/B 와 다릅니다.**
+> 도표: A = 보행자·자전거·PM 등 / B = 자동차
+> 사례: A = 청구인 / B = 피청구인 — **사건마다 뒤바뀝니다.**
+> 그래서 사례는 `to_consultant_view()` 에 넣지 않고 원문 표기를 그대로 노출합니다.
 
 > 📌 이전 안내가 `from hani.search import Searcher` 였습니다. **`taek.search` 로 바뀌었습니다.**
 
 ---
 
-## 현재 성능 · 다음 작업
+## 현재 성능
 
-| | Top-1 | Top-3 | MRR |
-|---|---:|---:|---:|
-| 벡터 (BGE-m3) | 64.3% | **78.6%** | 0.717 |
-| BM25 | 50.0% | 57.1% | 0.554 |
+평가셋 80문항(정답 64 / 정답 없음 16) 기준.
 
-다음 우선순위와 근거는 `EVAL.md` 하단 참조. 요약하면 —
-**하이브리드보다 동의어 처리(EXP-8)가 먼저**입니다. 남은 실패 3건이 전부
-랭킹이 아니라 어휘 불일치(`차선↔차로`, `킥보드↔PM`)이기 때문입니다.
+| 구성 | Top-1 | Top-3 | Top-10 | MRR | 오답 방지 |
+|---|---:|---:|---:|---:|---:|
+| 벡터 단독 (시작점) | 32.8% | 51.6% | 73.4% | 0.447 | 0.0% |
+| BM25 단독 | 29.7% | 56.2% | 78.1% | 0.454 | 0.0% |
+| + RRF 융합 (k=1) | 39.1% | 60.9% | 84.4% | 0.526 | 0.0% |
+| + 거절 임계값 | 39.1% | 60.9% | 82.8% | 0.523 | 81.2% |
+| + 질의 확장 | 42.2% | 64.1% | 84.4% | 0.558 | 81.2% |
+| + 메타 필터 정책 | 46.9% | 65.6% | 87.5% | 0.593 | 81.2% |
+| **+ 리랭킹 (cross-encoder)** | **54.7%** | **79.7%** | **92.2%** | **0.670** | **81.2%** |
+
+**Top-3 +28.1%p · MRR +0.223 · 오답 방지 0% → 81.2%.**
+
+리랭킹은 **기본 OFF** 입니다 (`rerank=True` 로 켜세요).
+CPU 에서 요청당 6.9초라 GPU 없는 환경에서는 못 씁니다. GPU(RTX 4070)에서는 0.5초입니다.
+근거와 실험 과정은 [`EVAL.md`](EVAL.md).
+
+### ⚠️ 해석 시 주의
+
+- 64문항으로는 이 차이를 **통계적으로 유의하다고 주장할 수 없습니다** (신뢰구간이 0을 포함).
+- 하이퍼파라미터(`k`·임계값)를 **같은 평가셋에서 골랐습니다.** 낙관 편향은 +0.4%p로 작지만 0은 아닙니다.
+- 평가셋 작성자가 1번 한 사람입니다. 3·4번 문항이 오면 **설정을 고정한 채 다시 재세요.**
+
+## 남은 작업
+
+| | |
+|---|---|
+| — | 심의사례 ↔ 현행 도표 매핑 (226건 전부 `review_required`) |
+| — | 3·4번 평가 문항 도착 후 전 설정 재검증 |
