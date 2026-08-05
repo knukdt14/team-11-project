@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
@@ -8,6 +9,17 @@ from .config import settings
 from .schemas import AdditionalInfoRequest, ConsultRequest, ConsultResponse, FollowUpRequest, FollowUpResponse, RecalculateRequest, RecalculateResponse
 from .service import add_information, consult, follow_up, recalculate
 from .sessions import sessions
+
+# ryeol.app.llm 의 logger.info/warning(Gemini/EXAONE 호출 성공·실패, 소요시간)이
+# 지금까지 uvicorn 로그에 전혀 안 찍혔던 이유: 이 파일 어디에도 로깅 설정이 없어서
+# INFO 레벨 로그가 그냥 버려지고 있었습니다.
+# root를 통째로 INFO로 올리면 httpx·huggingface_hub·sentence_transformers 내부 로그까지
+# 쏟아져서 정작 필요한 줄이 묻히므로, root는 WARNING으로 두고 우리 앱 로거(ryeol.*)만 INFO로 켭니다.
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logging.getLogger("ryeol").setLevel(logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
