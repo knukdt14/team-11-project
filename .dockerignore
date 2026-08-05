@@ -1,0 +1,10 @@
+.git
+.venv
+venv
+__pycache__
+*.pyc
+pdf/
+인수인계/
+taek/results/
+*.ipynb_checkpoints
+.streamlit/secrets.toml

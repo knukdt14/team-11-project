@@ -1,0 +1,84 @@
+# 통합 시연 환경 — 우리 프론트(woo) + 3번의 진짜 백엔드(ryeol) + Ollama(Qwen, GPU).
+#
+# ⚠️ ryeol/compose.yaml 이 이미 있지만 그건 3번이 자기 API 스모크테스트용으로 만든
+#    최소 프론트(`ryeol/frontend_smoke/app.py`)와 짝지어져 있습니다. 여기서는 그 백엔드+
+#    Ollama 구성은 그대로 가져오고, 프론트만 **실제 우리 대시보드(woo/)** 로 바꿨습니다.
+#
+# GPU가 필요합니다 (Ollama로 Qwen3:8b 실제 LLM 답변). GPU가 없으면 backend/ollama의
+# `gpus: all`을 지우고 backend 환경변수를 LLM_MODE=mock, SEARCH_RERANK=false로 바꾸세요
+# (검색·계산·화면은 그대로 실제 동작, LLM 설명문만 정형 문구로 대체됩니다).
+#
+# 실행:
+#   docker compose up --build
+#   → http://localhost:8502 (프론트)   http://localhost:8010/health (백엔드 상태)
+#   최초 실행은 Qwen3:8b(수 GB) 다운로드 때문에 오래 걸립니다.
+#
+# ⚠️ 호스트 포트 8010/8502를 씁니다(표준 8000/8501 아님) — 이 개발 PC에 이미 무관한
+#    프로젝트(pdf-rag-chatbot)가 8000/8501을 쓰고 있어서 충돌을 피하려고 옮겼습니다.
+#    컨테이너 내부 통신(BACKEND_URL=http://backend:8000)은 그대로라 영향 없습니다.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    gpus: all
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  ollama-init:
+    image: ollama/ollama:latest
+    entrypoint: ["ollama"]
+    command: ["pull", "${OLLAMA_MODEL:-qwen3:8b}"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build:
+      context: .
+      dockerfile: ryeol/Dockerfile.backend
+    environment:
+      - LLM_MODE=qwen
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:8b}
+      - SEARCH_RERANK=true     # 애매한 질문 정밀 재정렬 — 느리지만(질문당 ~7초) 정확도용.
+      - SESSION_DB_PATH=/runtime/sessions.sqlite3
+    gpus: all
+    volumes:
+      - ryeol-runtime:/runtime
+    ports:
+      - "8010:8000"
+    depends_on:
+      ollama-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 300s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: woo/Dockerfile
+    ports:
+      - "8502:8501"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  ollama-data:
+  ryeol-runtime:
