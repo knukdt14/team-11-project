@@ -14,8 +14,8 @@ from woo.components.widgets import (  # noqa: E402
     disclaimer,
     hero,
     inject_css,
+    sidebar_nav,
     status_pill,
-    topnav,
 )
 
 st.set_page_config(
@@ -24,7 +24,7 @@ st.set_page_config(
     layout="wide",
 )
 inject_css()
-topnav("home")
+sidebar_nav("home")
 
 top_l, top_r = st.columns([4, 1])
 with top_l:

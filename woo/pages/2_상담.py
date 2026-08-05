@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import sys
+import uuid
 from pathlib import Path
 
 import streamlit as st
@@ -31,19 +32,17 @@ from woo.components.widgets import (  # noqa: E402
     consult_report_text,
     disclaimer,
     follow_up_chips,
+    hero,
     inject_css,
     ratio_hero,
-    topnav,
+    sidebar_nav,
 )
 
 st.set_page_config(page_title="상담 · 과실비율", page_icon="💬", layout="wide")
 inject_css()
-topnav("consult")
-st.markdown(
-    '<div class="fr-section-title" style="font-size:1.5rem;">💬 과실비율 상담</div>',
-    unsafe_allow_html=True,
-)
-st.caption("사고 상황을 편하게 말씀해 주세요. 채팅하듯 입력하시면 됩니다.")
+sidebar_nav("consult")
+# 홈·지식베이스 페이지와 같은 큰 그라데이션 제목 박스로 통일 (예전엔 이 페이지만 작은 텍스트였음).
+hero("💬 과실비율 상담", "사고 상황을 편하게 말씀해 주세요. 채팅하듯 입력하시면 됩니다.")
 
 st.session_state.setdefault("consult_result", None)
 st.session_state.setdefault("applied_mods", set())  # 수정요소 id(str) 집합
@@ -51,18 +50,36 @@ st.session_state.setdefault("consultant_side", "A")
 st.session_state.setdefault("chat_history", [])
 st.session_state.setdefault("history", [])
 
+# ⚠️ "↔ 반대쪽이에요" 버튼은 st.radio(key="consultant_side")가 이미 이번 실행에서
+# 그려진 "뒤에" 그 값을 바꾸려고 해서 StreamlitAPIException이 났었습니다("위젯이 이미
+# 만들어진 뒤엔 그 key를 코드로 못 바꾼다"는 Streamlit 규칙). 그래서 즉시 바꾸는 대신
+# "다음 실행에서 바꿔달라"는 예약만 해두고, 라디오 위젯을 그리기 "전"인 지금 여기서
+# 반영합니다.
+if "_pending_side" in st.session_state:
+    st.session_state["consultant_side"] = st.session_state.pop("_pending_side")
+
 # ── 사이드바: 상담 히스토리 ────────────────────────────────────────
 with st.sidebar:
     st.divider()
-    st.markdown("**🕘 이전 상담 내역**")
+    hist_title, hist_clear = st.columns([3, 1])
+    hist_title.markdown("**🕘 이전 상담 내역**")
+    if st.session_state["history"] and hist_clear.button("🗑️", key="clear_all_history", help="전체 삭제"):
+        st.session_state["history"] = []
+        st.rerun()
+
     if not st.session_state["history"]:
         st.caption("아직 상담 기록이 없어요.")
-    for idx, h in enumerate(reversed(st.session_state["history"])):
+    for h in reversed(st.session_state["history"]):
+        hid = h["id"]
+        row_label, row_del = st.columns([5, 1])
         label = f"{h['도표번호'] or '?'} · {h['질문'][:16]}{'…' if len(h['질문']) > 16 else ''}"
-        if st.button(label, key=f"hist_{idx}_{h['질문']}", use_container_width=True):
+        if row_label.button(label, key=f"hist_{hid}", use_container_width=True):
             st.session_state["consult_result"] = h["result"]
             st.session_state["applied_mods"] = set()
             st.session_state["chat_history"] = [("user", h["질문"])]
+            st.rerun()
+        if row_del.button("✕", key=f"hist_del_{hid}", help="이 기록 삭제"):
+            st.session_state["history"] = [x for x in st.session_state["history"] if x["id"] != hid]
             st.rerun()
 
 # ── 1. 입력 ──────────────────────────────────────────────────────
@@ -106,6 +123,7 @@ if run and query.strip():
         if new_result.get("status") == "complete":
             st.session_state["history"].append(
                 {
+                    "id": str(uuid.uuid4()),
                     "질문": query.strip(),
                     "도표번호": new_result.get("도표번호", ""),
                     "result": new_result,
@@ -183,9 +201,9 @@ with switch_col:
     other_side = "B" if consultant_side == "A" else "A"
     if st.button(f"↔ 반대쪽({other_side})이에요", use_container_width=True):
         with st.spinner("다시 계산하는 중..."):
-            st.session_state["consultant_side"] = other_side
             st.session_state["consult_result"] = consult(result["질문"], other_side)
             st.session_state["applied_mods"] = set()
+            st.session_state["_pending_side"] = other_side  # 다음 실행 맨 위에서 반영됨
         st.rerun()
 
 if not result.get("백엔드_사용", False):
@@ -222,28 +240,12 @@ with tab_scene:
 with tab_apply:
     # KNIA 원본은 수정요소가 클릭 불가한 정적 테이블이지만,
     # 우리는 토글하면 바로 재계산되는 것이 이 프로젝트의 핵심 차별점입니다(README §3-②).
-    최종과실, 계산_단계 = recalculate(result, st.session_state["applied_mods"])
-
-    with st.container(border=True):
-        st.markdown(
-            ratio_hero(
-                최종과실["A"], 최종과실["B"], result.get("나_역할", "나"), result.get("상대_역할", "상대")
-            ),
-            unsafe_allow_html=True,
-        )
-        st.caption("기본과실 → 아래 수정요소를 켜면 이 숫자가 즉시 바뀝니다 (재검색 없음)")
-
-        applied_names = [m["조건"] for m in 수정요소 if m["id"] in st.session_state["applied_mods"]]
-        report = consult_report_text(result, 최종과실, applied_names)
-        st.download_button(
-            "📥 이 결과 리포트 다운로드",
-            data=report.encode("utf-8"),
-            file_name=f"과실비율_{result.get('도표번호', 'result')}.txt",
-            mime="text/plain",
-            use_container_width=True,
-        )
-
-    st.write("")
+    #
+    # ⚠️ 순서가 중요합니다: 토글을 먼저 전부 그려서 session_state["applied_mods"]를
+    # 이번 rerun 기준으로 완전히 갱신한 "다음"에 recalculate()를 호출해야 합니다.
+    # 예전엔 recalculate()를 토글보다 먼저 불러서, 화면에 보이는 비율이 "방금 누른
+    # 토글"이 아니라 "한 번 전 상태"를 보여주는 버그가 있었습니다(토글할 때마다
+    # 숫자가 한 박자 밀려서 오르내림이 뒤죽박죽으로 보이던 원인).
     col_a, col_b = st.columns(2)
     with col_a, st.container(border=True):
         st.markdown(f"**🚙 나({result.get('나_역할', 'A')}) 가감요소**")
@@ -278,6 +280,29 @@ with tab_apply:
             else:
                 st.session_state["applied_mods"].discard(m["id"])
 
+    # 토글이 전부 반영된 뒤에 딱 한 번 계산 — 이 값을 아래 화면 전체와 탭 밖(법규·판례 등)에서도 씁니다.
+    최종과실, 계산_단계 = recalculate(result, st.session_state["applied_mods"])
+
+    st.write("")
+    with st.container(border=True):
+        st.markdown(
+            ratio_hero(
+                최종과실["A"], 최종과실["B"], result.get("나_역할", "나"), result.get("상대_역할", "상대")
+            ),
+            unsafe_allow_html=True,
+        )
+        st.caption("기본과실 → 위 수정요소를 켜면 이 숫자가 즉시 바뀝니다 (재검색 없음)")
+
+        applied_names = [m["조건"] for m in 수정요소 if m["id"] in st.session_state["applied_mods"]]
+        report = consult_report_text(result, 최종과실, applied_names)
+        st.download_button(
+            "📥 이 결과 리포트 다운로드",
+            data=report.encode("utf-8"),
+            file_name=f"과실비율_{result.get('도표번호', 'result')}.txt",
+            mime="text/plain",
+            use_container_width=True,
+        )
+
     st.write("")
     g_left, g_center, g_right = st.columns([1, 2, 1])
     with g_center:
@@ -295,18 +320,24 @@ with tab_expl:
         if not result.get("해설") and not result.get("수정요소_해설"):
             st.caption("해설 데이터가 없습니다.")
 
-# 재계산 결과를 뒤에서도 쓰므로, 사용자가 '적용요소' 탭을 안 봤을 수 있는 경우를 대비해 재확인.
-최종과실, 계산_단계 = recalculate(result, st.session_state["applied_mods"])
+# 최종과실/계산_단계는 위 tab_apply 안에서 이미 (토글 반영 후) 계산해뒀습니다 — 여기선 재사용만.
+# (with 블록은 파이썬에서 새 스코프를 안 만들어서 그대로 접근 가능. 백엔드 사용 시
+# recalculate()를 또 부르면 왕복이 두 번 생겨서 일부러 다시 안 부릅니다.)
 
 # ── 2-3. AI 설명 (백엔드가 있으면 LLM, 로컬이면 정형 문구) ────────
 if result.get("답변"):
     st.write("")
     st.markdown('<div class="fr-section-title">🤖 AI 설명</div>', unsafe_allow_html=True)
     with st.container(border=True):
+        if result.get("warnings"):
+            # AI가 직접 쓴 문장이 아니라 백엔드의 정형 대체 문구일 때는 그렇다고
+            # 눈에 띄게 알려줍니다 — 안 그러면 AI가 잘 답한 것처럼 오해할 수 있어요.
+            st.warning("⚠️ AI가 지금 답변을 만들지 못해서, 대신 정해진 문구를 보여드리고 있어요.")
         st.write(result["답변"])
         if result.get("warnings"):
-            for w in result["warnings"]:
-                st.caption(f"⚠️ {w}")
+            with st.expander("자세한 원인 (기술 정보)"):
+                for w in result["warnings"]:
+                    st.caption(w)
 
 # ── 2-4. 관련 법규 · 유사사례(심의사례) ────────────────────────────
 st.write("")
@@ -367,17 +398,21 @@ if result.get("백엔드_사용"):
 else:
     st.caption("🔧 로컬 검색 모드에서는 정형 안내만 드려요 — 백엔드가 붙으면 실제 LLM이 답합니다.")
 
-for role, msg in st.session_state["chat_history"]:
+for entry in st.session_state["chat_history"]:
+    role, msg = entry[0], entry[1]
+    warned = entry[2] if len(entry) > 2 else False
     avatar = "🙋" if role == "user" else "🤖"
     with st.chat_message("user" if role == "user" else "assistant", avatar=avatar):
+        if warned:
+            st.caption("⚠️ AI가 직접 쓴 답이 아니라 정해진 문구입니다")
         st.write(msg)
 
 follow_up = st.chat_input("예) 저는 신호가 있었다고 생각해요 / 상대가 과속했어요")
 if follow_up:
     st.session_state["chat_history"].append(("user", follow_up))
     with st.spinner("답변을 준비하는 중..."):
-        answer = follow_up_chat(result, follow_up)
-    st.session_state["chat_history"].append(("assistant", answer))
+        answer, chat_warnings = follow_up_chat(result, follow_up)
+    st.session_state["chat_history"].append(("assistant", answer, bool(chat_warnings)))
     st.rerun()
 
 disclaimer()

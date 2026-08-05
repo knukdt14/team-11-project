@@ -49,9 +49,34 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+
+def _load_local_env() -> None:
+    """
+    `woo/.env` (커밋 안 되는 로컬 전용 파일)가 있으면 읽어서 os.environ 기본값으로 채웁니다.
+
+    ⚠️ 이 개발 PC는 8000번 포트가 무관한 다른 프로젝트(pdf-rag-chatbot)와 겹쳐서,
+    BACKEND_URL을 매번 터미널에서 손으로 지정해야 했습니다 — 사람이 깜빡하고 그냥
+    `streamlit run app.py`로 켜면 조용히 엉뚱한 8000번을 잘못 호출하는 사고가 반복됐습니다
+    (health 체크가 둘 다 200을 줘서 겉으론 "연결됨"처럼 보이는 게 더 헷갈렸음). 매번
+    기억하지 않아도 되게, 파일로 한 번만 적어두고 여기서 자동으로 불러옵니다.
+    python-dotenv 없이 최소한만 직접 파싱합니다(새 의존성 추가 안 하려고).
+    """
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+_load_local_env()
+
 # ⚠️ 로컬 개발 PC에 따라 8000번 포트가 Docker Desktop/WSL 등 무관한 프로세스와 겹칠 수
-#    있습니다(실제로 이 프로젝트 개발 중 발견). 그럴 땐 실행 시 BACKEND_URL 환경변수로
-#    다른 포트를 지정하세요 (예: `uvicorn ryeol.app.main:app --port 8010`).
+#    있습니다(실제로 이 프로젝트 개발 중 발견). `woo/.env`에 BACKEND_URL을 적어두면
+#    자동으로 반영됩니다 — 안 적혀 있으면 이 기본값(8000)을 씁니다.
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
 _TIMEOUT = 2.0
 # 백엔드(ryeol/app/config.py)의 LLM_TIMEOUT 기본값이 180초입니다 — 우리 쪽 요청
@@ -386,9 +411,15 @@ def additional_info(result: dict, extra_info: str) -> dict:
     return new_result
 
 
-def follow_up_chat(result: dict, question: str) -> str:
+def follow_up_chat(result: dict, question: str) -> tuple[str, list[str]]:
     """상담 결과를 보고 후속 질문(반박·추가 질문)에 답합니다. 실제 백엔드는 LLM(Qwen)
-    답변을, 로컬 폴백은 정형 안내 문구를 돌려줍니다."""
+    답변을, 로컬 폴백은 정형 안내 문구를 돌려줍니다.
+
+    반환값 (답변, warnings) — warnings는 백엔드가 LLM 호출에 실패해 정형 문구로
+    대체했을 때 채워집니다(예: "Qwen 호출 실패...: ValueError"). 화면에서 이걸 숨기지
+    않고 사용자에게 "지금 이 답은 AI가 직접 쓴 게 아니다"라고 투명하게 알려줘야
+    합니다 — 안 그러면 마치 AI가 잘 답한 것처럼 보여서 오해를 삽니다.
+    """
     if result.get("백엔드_사용") and backend_available():
         try:
             r = requests.post(
@@ -397,12 +428,14 @@ def follow_up_chat(result: dict, question: str) -> str:
                 timeout=_LLM_TIMEOUT,
             )
             r.raise_for_status()
-            return r.json().get("답변", "")
+            data = r.json()
+            return data.get("답변", ""), data.get("warnings", [])
         except requests.RequestException as e:
-            return f"⚠️ 백엔드 호출 실패: {e}"
+            return f"⚠️ 백엔드 호출 실패: {e}", []
     return (
         "지금은 로컬 검색 모드라 실제 LLM 답변 대신 안내만 드려요. "
-        "말씀하신 내용을 반영하려면 위 입력창에 다시 자세히 적어서 '상담 시작'을 눌러주세요."
+        "말씀하신 내용을 반영하려면 위 입력창에 다시 자세히 적어서 '상담 시작'을 눌러주세요.",
+        [],
     )
 
 

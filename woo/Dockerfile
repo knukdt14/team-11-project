@@ -21,6 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY hani/ ./hani/
 COPY taek/ ./taek/
 COPY woo/ ./woo/
+COPY .streamlit/ ./.streamlit/
 
 ENV BACKEND_URL=http://backend:8000 \
     EMBEDDING_DEVICE=cpu \

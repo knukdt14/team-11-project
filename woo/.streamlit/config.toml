@@ -1,0 +1,12 @@
+# 저장소 루트의 .streamlit/config.toml 과 동일 내용.
+# Streamlit은 "실행한 위치" 기준으로 .streamlit/config.toml 을 찾기 때문에,
+# `cd woo && streamlit run app.py`처럼 woo/ 안에서 바로 실행하는 경우를 위해
+# 여기에도 하나 둡니다 (루트에서 `streamlit run woo/app.py`로 실행할 땐 루트 것이 적용됨).
+[theme]
+base = "light"
+
+[server]
+port = 8600
+
+[browser]
+gatherUsageStats = false

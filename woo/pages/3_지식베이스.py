@@ -10,11 +10,11 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from woo.components.kb_data import SOURCE_LABELS, source_label  # noqa: E402
-from woo.components.widgets import hero, inject_css, topnav  # noqa: E402
+from woo.components.widgets import hero, inject_css, sidebar_nav  # noqa: E402
 
 st.set_page_config(page_title="지식베이스 · 과실비율", page_icon="📚", layout="wide")
 inject_css()
-topnav("kb")
+sidebar_nav("kb")
 hero("📚 지식베이스 탐색", "상담 없이 도표·판례·법령을 직접 검색해볼 수 있습니다.")
 
 

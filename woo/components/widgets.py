@@ -2,8 +2,8 @@
 
 `.streamlit/config.toml` 을 건드리지 않고(다른 팀원 영역 보호) 순수 CSS 주입만으로
 색상·타이포·카드 스타일을 통일합니다. `inject_css()` 를 각 페이지 맨 위에서 한 번만
-호출하세요. `topnav()` 는 Streamlit 기본 사이드바 페이지 목록 대신 쓰는 커스텀 상단
-네비게이션입니다 — 페이지 맨 위, `inject_css()` 바로 다음에 호출하세요.
+호출하세요. `sidebar_nav()` 는 Streamlit 기본 사이드바 페이지 목록 대신 쓰는 커스텀
+사이드바 네비게이션입니다 — 페이지 맨 위, `inject_css()` 바로 다음에 호출하세요.
 """
 
 from __future__ import annotations
@@ -62,73 +62,95 @@ def inject_css() -> None:
         html, body, [class*="css"] {{
             font-family: "Pretendard", -apple-system, "Segoe UI", "Malgun Gothic",
                          "Apple SD Gothic Neo", sans-serif;
+            font-size: 1.08rem;
         }}
-        .block-container {{ padding-top: 1.2rem; padding-bottom: 3rem; max-width: 1120px; }}
+        /* 기본 문단/캡션/마크다운 글자도 같이 키움 (여백만 넓고 글자는 작아 보인다는
+           피드백 — Streamlit 기본 크기가 전체적으로 작아서 위 html 폰트 하나로는
+           st.write/st.caption 등 내부 요소까지 안 커짐, 각각 지정 필요) */
+        [data-testid="stMarkdownContainer"] p {{ font-size: 1.05rem; line-height: 1.65; }}
+        [data-testid="stCaptionContainer"], .stCaption {{ font-size: 0.92rem !important; }}
+        .block-container {{ padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1120px; }}
 
-        /* ── 배경: 흰 배경 대신 은은한 그라데이션 메시 ───────────── */
+        /* ── 배경: 차분한 단색 계열 (화려한 다색 그라데이션 대신) ──── */
         .stApp {{
-            background:
-                radial-gradient(1100px circle at 10% -8%, rgba(46,91,255,0.14) 0%, transparent 46%),
-                radial-gradient(900px circle at 92% 8%, rgba(108,76,255,0.12) 0%, transparent 42%),
-                radial-gradient(1000px circle at 50% 115%, rgba(255,107,107,0.08) 0%, transparent 48%),
-                linear-gradient(180deg, #F6F8FD 0%, #EEF1F9 55%, #EAEFFB 100%);
-            background-attachment: fixed;
+            background: linear-gradient(180deg, #F8F9FC 0%, #F1F3F8 100%);
         }}
         [data-testid="stSidebar"] {{
-            background: rgba(255,255,255,0.7); backdrop-filter: blur(8px);
-            border-right: 1px solid rgba(226,232,240,0.7);
+            background: #FFFFFF;
+            border-right: 1px solid #EAECF1;
         }}
+        [data-testid="stSidebar"] .block-container {{ padding-top: 1.4rem; }}
 
         /* ── Streamlit 기본 크롬 정리 ─────────────────────────── */
+        /* ⚠️ 버전마다 testid가 바뀝니다(예전엔 stDeployButton, 지금(1.60)은
+           stAppDeployButton) — 두 이름 다 대비. */
         #MainMenu {{ visibility: hidden; }}
         footer {{ visibility: hidden; }}
-        .stDeployButton {{ display: none; }}
+        .stDeployButton, [data-testid="stAppDeployButton"] {{ display: none !important; }}
+        [data-testid="stToolbarActions"] {{ display: none !important; }}
         header[data-testid="stHeader"] {{ background: rgba(255,255,255,0); }}
-        [data-testid="stSidebarNav"] {{ display: none; }}  /* 자동 페이지 목록 → topnav로 대체 */
+        [data-testid="stSidebarNav"] {{ display: none; }}  /* 자동 페이지 목록 → sidebar_nav()로 대체 */
 
-        /* ── 상단 네비게이션 바 ───────────────────────────────── */
-        .fr-navbar-wrap {{
-            position: sticky; top: 0; z-index: 999;
-            background: rgba(255,255,255,0.86); backdrop-filter: blur(10px);
-            border-bottom: 1px solid #EDF0F5; margin: -1.2rem -1rem 1.6rem -1rem;
-            padding: 0 1rem;
-        }}
+        /* ── 사이드바 내비게이션 (홈/상담/지식베이스) ─────────────── */
         .fr-navbar-brand {{
-            font-weight: 800; font-size: 1.05rem; color: #1E293B;
-            display:flex; align-items:center; gap:6px; white-space:nowrap;
+            font-weight: 800; font-size: 1.25rem; color: #0F172A;
+            display:flex; align-items:center; gap:8px; white-space:nowrap;
         }}
-        div[data-testid="stPageLink"] {{ width: auto !important; }}
-        div[data-testid="stPageLink"] a {{
-            border-radius: 999px !important; padding: 7px 16px !important;
-            font-weight: 600 !important; font-size: 0.88rem !important;
-            color: #64748B !important; background: transparent !important;
-            border: 1px solid transparent !important; transition: .15s;
+        /* ⚠️ st.page_link는 내부에 툴팁 래퍼+마크다운 컴포넌트가 여러 겹 감싸고 있어서
+           (BaseButtonTooltip > div > a > span > <p>) CSS로 글자색을 덮어씌우려 해도
+           실제로 안 먹히는 걸 두 번이나 확인했습니다(상단바 때도, 사이드바로 옮긴
+           직후에도 라벨 글자가 안 보였음) — 그래서 훨씬 단순한 st.button +
+           st.switch_page 조합으로 바꿨습니다. 버튼은 중첩 구조가 없어서 CSS가
+           바로 먹습니다. */
+        [data-testid="stSidebar"] div[data-testid="stVerticalBlock"]:has(button[kind]) div.stButton {{
+            margin-bottom: 2px;
         }}
-        div[data-testid="stPageLink"] a:hover {{
-            background: #F1F5F9 !important; color: #1E293B !important;
+        [data-testid="stSidebar"] .stButton>button {{
+            width: 100%; justify-content: flex-start !important; text-align: left !important;
+            border-radius: 10px !important; font-weight: 600 !important; font-size: 1.08rem !important;
+            padding: 12px 14px !important; border: none !important; box-shadow: none !important;
+            transition: .15s;
         }}
-        .fr-nav-active div[data-testid="stPageLink"] a {{
-            background: {나_색}1A !important; color: {나_색} !important;
-            border-color: {나_색}33 !important;
+        [data-testid="stSidebar"] .stButton>button[kind="secondary"] {{
+            background: transparent !important; color: #334155 !important;
+        }}
+        [data-testid="stSidebar"] .stButton>button[kind="secondary"]:hover {{
+            background: #F1F5F9 !important; color: {나_색} !important;
+        }}
+        [data-testid="stSidebar"] .stButton>button[kind="primary"] {{
+            background: {나_색}14 !important; color: {나_색} !important;
+        }}
+        [data-testid="stSidebar"] .stButton>button[kind="primary"]:hover {{
+            background: {나_색}22 !important; color: {나_색} !important;
         }}
 
         /* ── 히어로 배너 ─────────────────────────────────────── */
         .fr-hero {{
             background: linear-gradient(135deg, {나_색} 0%, #6C4CFF 100%);
-            color: white; border-radius: 20px; padding: 36px 40px;
-            margin-bottom: 28px; box-shadow: 0 8px 24px rgba(46,91,255,0.25);
+            color: white; border-radius: 18px; padding: 34px 38px;
+            margin-bottom: 24px; box-shadow: 0 10px 28px rgba(46,91,255,0.22);
         }}
-        .fr-hero h1 {{ margin:0 0 8px 0; font-size:1.9rem; font-weight:800; }}
-        .fr-hero p {{ margin:0; opacity:0.92; font-size:1.02rem; }}
+        /* ⚠️ 한글은 단어 사이에 띄어쓰기가 있어도 브라우저 기본 줄바꿈(overflow-wrap)이
+           음절 단위로 끊어버려서 "대시보드"가 "대시보"+"드"처럼 단어 중간에서
+           줄바꿈됐습니다 — word-break:keep-all 로 단어(띄어쓰기) 단위로만 줄바꿈되게
+           고정합니다. */
+        .fr-hero h1 {{
+            margin:0 0 10px 0; font-size:2rem; font-weight:800; line-height:1.35;
+            word-break:keep-all; overflow-wrap:normal;
+        }}
+        .fr-hero p {{
+            margin:0; opacity:0.92; font-size:1.15rem; line-height:1.55;
+            word-break:keep-all; overflow-wrap:normal;
+        }}
 
         /* ── 상태 배지 (pill) ────────────────────────────────── */
         .fr-badge {{
-            display:inline-block; padding:3px 12px; border-radius:999px;
-            font-size:0.78rem; font-weight:700; margin-left:8px; vertical-align:middle;
+            display:inline-block; padding:4px 13px; border-radius:999px;
+            font-size:0.88rem; font-weight:700; margin-left:8px; vertical-align:middle;
         }}
         .fr-status-pill {{
-            display:inline-flex; align-items:center; gap:6px; padding:6px 14px;
-            border-radius:999px; font-size:0.82rem; font-weight:600;
+            display:inline-flex; align-items:center; gap:6px; padding:7px 15px;
+            border-radius:999px; font-size:0.92rem; font-weight:600;
         }}
         .fr-status-on {{ background:#DCFCE7; color:#166534; }}
         .fr-status-off {{ background:#FEF3C7; color:#92400E; }}
@@ -136,16 +158,19 @@ def inject_css() -> None:
 
         /* ── 예시 카드 / 일반 카드 ───────────────────────────── */
         .fr-example-card {{
-            border:1px solid #E2E8F0; border-radius:16px; padding:18px 20px;
+            border:1px solid #E2E8F0; border-radius:16px; padding:20px 22px;
             background:#FAFBFF; height:100%; transition:.15s;
         }}
         .fr-example-card:hover {{ border-color:{나_색}; box-shadow:0 4px 14px rgba(46,91,255,0.12); }}
-        .fr-example-q {{ font-size:0.95rem; color:#1E293B; line-height:1.5; min-height:3.2em; }}
+        /* ⚠️ min-height는 텍스트 줄 수(2줄 vs 3줄)에 따라 카드 높이가 서로 달라지는
+           문제 때문입니다 — st.columns는 세로로 자동 stretch가 안 돼서, 가장 긴
+           예시(3줄)를 기준으로 넉넉하게 잡아야 3개 카드 높이가 맞습니다. */
+        .fr-example-q {{ font-size:1.08rem; color:#1E293B; line-height:1.55; min-height:4.8em; }}
 
         /* ── 되묻기 칩 ────────────────────────────────────────── */
         .fr-chip {{
-            display:inline-block; padding:6px 14px; border-radius:999px;
-            border:1px solid #CBD5E1; background:#F8FAFC; font-size:0.85rem;
+            display:inline-block; padding:7px 15px; border-radius:999px;
+            border:1px solid #CBD5E1; background:#F8FAFC; font-size:0.95rem;
             margin:2px 4px 2px 0;
         }}
 
@@ -156,22 +181,22 @@ def inject_css() -> None:
         }}
         .fr-side-a {{ background:linear-gradient(160deg,#EAF1FF,#F5F8FF); border:1px solid #DCE7FF; }}
         .fr-side-b {{ background:linear-gradient(160deg,#FFEDED,#FFF6F6); border:1px solid #FFD9D9; }}
-        .fr-ratio-role {{ font-size:0.85rem; color:#64748B; font-weight:600; margin-bottom:6px; }}
-        .fr-ratio-num {{ font-size:2.4rem; font-weight:800; line-height:1; }}
+        .fr-ratio-role {{ font-size:0.95rem; color:#64748B; font-weight:600; margin-bottom:6px; }}
+        .fr-ratio-num {{ font-size:2.7rem; font-weight:800; line-height:1; }}
         .fr-side-a .fr-ratio-num {{ color:{나_색}; }}
         .fr-side-b .fr-ratio-num {{ color:{상대_색}; }}
         .fr-ratio-vs {{
-            align-self:center; font-weight:700; color:#94A3B8; font-size:1.1rem;
+            align-self:center; font-weight:700; color:#94A3B8; font-size:1.2rem;
         }}
 
         /* ── 섹션 제목 ────────────────────────────────────────── */
         .fr-section-title {{
-            font-size:1.05rem; font-weight:700; margin: 4px 0 10px 0; color:#1E293B;
+            font-size:1.25rem; font-weight:700; margin: 4px 0 12px 0; color:#1E293B;
         }}
 
         /* ── 면책 문구 ────────────────────────────────────────── */
         .fr-disclaimer {{
-            font-size:0.78rem; color:#64748B; border-top:1px solid #E2E8F0;
+            font-size:0.88rem; color:#64748B; border-top:1px solid #E2E8F0;
             padding-top:8px; margin-top:16px;
         }}
 
@@ -186,20 +211,20 @@ def inject_css() -> None:
         /* ── 사이드바 브랜드 ─────────────────────────────────── */
         .fr-sidebar-brand {{
             display:flex; align-items:center; gap:8px; font-weight:800;
-            font-size:1.05rem; margin-bottom:2px;
+            font-size:1.2rem; margin-bottom:2px;
         }}
-        .fr-sidebar-sub {{ font-size:0.78rem; color:#94A3B8; margin-bottom:14px; }}
+        .fr-sidebar-sub {{ font-size:0.88rem; color:#94A3B8; margin-bottom:14px; }}
         .fr-history-item {{
-            font-size:0.82rem; color:#475569; padding:6px 0; border-bottom:1px solid #F1F5F9;
+            font-size:0.92rem; color:#475569; padding:6px 0; border-bottom:1px solid #F1F5F9;
         }}
 
         /* ── 지식베이스 카드 ─────────────────────────────────── */
         .fr-kb-card {{
-            border:1px solid #E2E8F0; border-radius:14px; padding:14px 18px;
+            border:1px solid #E2E8F0; border-radius:14px; padding:16px 20px;
             margin-bottom:10px; background:#FFFFFF;
         }}
-        .fr-kb-title {{ font-weight:700; font-size:0.98rem; }}
-        .fr-kb-meta {{ font-size:0.78rem; color:#94A3B8; }}
+        .fr-kb-title {{ font-weight:700; font-size:1.12rem; }}
+        .fr-kb-meta {{ font-size:0.88rem; color:#94A3B8; }}
 
         /* ── 통계 지표 카드 ───────────────────────────────────── */
         div[data-testid="stMetric"] {{
@@ -213,7 +238,7 @@ def inject_css() -> None:
 
 
 def sidebar_brand(subtitle: str = "AI 과실비율 상담 서비스") -> None:
-    """사이드바에 붙이는 보조 라벨(히스토리 위젯 등 위). 메인 내비는 topnav() 를 쓰세요."""
+    """사이드바에 붙이는 보조 라벨(히스토리 위젯 등 위). 메인 내비는 sidebar_nav() 를 쓰세요."""
     with st.sidebar:
         st.markdown(
             f'<div class="fr-sidebar-brand">🚦 과실비율 상담</div>'
@@ -222,27 +247,31 @@ def sidebar_brand(subtitle: str = "AI 과실비율 상담 서비스") -> None:
         )
 
 
-def topnav(active: str) -> None:
-    """Streamlit 기본 사이드바 페이지 목록을 대신하는 상단 네비게이션 바.
+def sidebar_nav(active: str) -> None:
+    """왼쪽 사이드바에 그리는 커스텀 네비게이션(홈/상담/지식베이스).
 
     `inject_css()` 가 `[data-testid="stSidebarNav"]`(자동 페이지 목록)를 숨기므로,
-    페이지 이동은 이 네비바의 `st.page_link` 로만 가능합니다. 모든 페이지 맨 위,
-    `inject_css()` 바로 다음에 호출하세요. `active` 는 `_NAV_PAGES` 의 첫 값(id)입니다.
+    페이지 이동은 여기서만 가능합니다. 모든 페이지 맨 위, `inject_css()` 바로 다음에
+    호출하세요. `active` 는 `_NAV_PAGES` 의 첫 값(id)입니다.
+
+    ⚠️ st.page_link 대신 st.button + st.switch_page를 씁니다 — page_link는 내부에
+    툴팁 래퍼/마크다운 컴포넌트가 여러 겹 감싸고 있어 CSS로 글자색을 덮어씌워도
+    실제로 안 먹히는 걸(라벨이 아예 안 보임) 두 번 확인했습니다. 버튼은 그런 중첩이
+    없어서 CSS가 바로 먹습니다.
     """
-    st.markdown('<div class="fr-navbar-wrap">', unsafe_allow_html=True)
-    cols = st.columns([2, 1, 1, 1])
-    with cols[0]:
-        st.markdown(
-            '<div class="fr-navbar-brand" style="padding:10px 0;">🚦 과실비율 상담</div>',
-            unsafe_allow_html=True,
-        )
-    for col, (page_id, emoji, label, target) in zip(cols[1:], _NAV_PAGES, strict=False):
-        with col:
-            wrap_cls = "fr-nav-active" if page_id == active else ""
-            st.markdown(f'<div class="{wrap_cls}" style="padding:6px 0;">', unsafe_allow_html=True)
-            st.page_link(target, label=label, icon=emoji)
-            st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    with st.sidebar:
+        st.markdown('<div class="fr-navbar-brand">🚦 과실비율 상담</div>', unsafe_allow_html=True)
+        st.markdown('<div style="height:14px"></div>', unsafe_allow_html=True)
+        for page_id, emoji, label, target in _NAV_PAGES:
+            is_active = page_id == active
+            clicked = st.button(
+                f"{emoji}  {label}",
+                key=f"nav_{page_id}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary",
+            )
+            if clicked and not is_active:
+                st.switch_page(target)
 
 
 def hero(title: str, subtitle: str) -> None:
