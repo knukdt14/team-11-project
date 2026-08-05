@@ -1,0 +1,40 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: ryeol/Dockerfile.backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      LLM_MODE: mock
+      SEARCH_RERANK: "false"
+      HF_HOME: /cache/huggingface
+      SESSION_DB_PATH: /runtime/sessions.sqlite3
+    volumes:
+      - ryeol-hf-cache:/cache/huggingface
+      - ryeol-runtime:/runtime
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 300s
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: ryeol/Dockerfile.frontend
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  ryeol-hf-cache:
+  ryeol-runtime:

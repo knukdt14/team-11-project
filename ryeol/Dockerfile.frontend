@@ -1,0 +1,5 @@
+FROM python:3.13-slim
+WORKDIR /app
+RUN pip install --no-cache-dir streamlit==1.60.0 requests==2.34.2
+COPY ryeol/frontend_smoke/app.py ./app.py
+CMD ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501"]

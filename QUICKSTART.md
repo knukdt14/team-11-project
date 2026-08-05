@@ -4,6 +4,28 @@
 
 ---
 
+## 0. Docker로 웹 전체 실행
+
+NVIDIA GPU PC의 기본 명령입니다. Qwen과 GPU 리랭킹까지 실행합니다.
+
+```bash
+cd ryeol
+docker compose up --build -d
+```
+
+Streamlit은 8501, FastAPI Swagger는 8000 포트입니다.
+
+GPU 오류가 나거나 GPU가 없는 PC·Codespaces에서는 CPU fallback을 사용합니다.
+
+```bash
+cd ryeol
+docker compose -f compose.cpu.yaml up --build -d --remove-orphans
+```
+
+Codespaces의 자세한 실행법은 [`CODESPACES.md`](CODESPACES.md)를 참고하세요.
+
+---
+
 ## 1. 가상환경 만들기 (최초 1회)
 
 팀 전원이 **같은 파이썬(3.13) · 같은 패키지 버전**을 씁니다.
