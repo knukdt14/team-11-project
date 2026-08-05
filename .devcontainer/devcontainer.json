@@ -20,6 +20,6 @@
       "onAutoForward": "openBrowser"
     }
   },
-  "postCreateCommand": "cp -n ryeol/.env.example ryeol/.env || true",
+  "postCreateCommand": "cp -n ryeol/.env.cpu.example ryeol/.env || true",
   "remoteUser": "vscode"
 }

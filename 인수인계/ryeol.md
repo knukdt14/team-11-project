@@ -17,7 +17,7 @@
 - Qwen 실패 시 계산 결과를 보존하는 정형 문장 폴백
 - Docker Compose 백엔드·최소 프론트·Ollama 통합 환경
 - Backend GPU 리랭커, HF 캐시, Qwen 자동 다운로드
-- `docker compose up --build` CPU·Codespaces 기본 실행과 GPU override 분리
+- `docker compose up --build` GPU 기본 실행과 `compose.cpu.yaml` CPU·Codespaces fallback 분리
 - 계산·세션·상담·재계산·HTTP 계약 테스트
 - 실제 RAG 대표 사고 5건 및 실제 Qwen 전체 흐름 검증
 
