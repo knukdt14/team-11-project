@@ -191,6 +191,7 @@ class Searcher:
         kind: str | None = "standard",
         source_id: str | None = None,
         mode: str = "vector",
+        expand: bool = False,
     ) -> list[Hit]:
         """
         kind='standard' 가 기본입니다. 법 조문까지 함께 보려면 kind=None.
@@ -200,9 +201,20 @@ class Searcher:
           vector  임베딩 코사인 (기본)
           bm25    키워드 (문자 n-gram)
 
+        expand
+          True 면 질의에 문서 어휘를 덧붙입니다(킥보드 → PM 등). synonyms.py 참조.
+          인덱스는 건드리지 않으므로 두 mode 모두에 적용됩니다.
+
         ⚠️ vector 와 bm25 는 **점수 스케일이 다릅니다**(코사인 0~1 vs BM25 0~수십).
            단독 비교·순위 용도로만 쓰고, 두 점수를 직접 더하지 마세요.
         """
+        if expand:
+            try:
+                from .synonyms import expand_query
+            except ImportError:
+                from synonyms import expand_query
+            query, _ = expand_query(query)
+
         n = min(top_k * 8, 200)          # 면 단위로 넓게 뽑은 뒤 부모로 합칩니다
         if mode == "vector":
             rows = self._vector_rows(query, n, kind, source_id)
