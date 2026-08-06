@@ -240,11 +240,13 @@ with tab_apply:
     # KNIA 원본은 수정요소가 클릭 불가한 정적 테이블이지만,
     # 우리는 토글하면 바로 재계산되는 것이 이 프로젝트의 핵심 차별점입니다(README §3-②).
     #
-    # ⚠️ 순서가 중요합니다: 토글을 먼저 전부 그려서 session_state["applied_mods"]를
-    # 이번 rerun 기준으로 완전히 갱신한 "다음"에 recalculate()를 호출해야 합니다.
-    # 예전엔 recalculate()를 토글보다 먼저 불러서, 화면에 보이는 비율이 "방금 누른
-    # 토글"이 아니라 "한 번 전 상태"를 보여주는 버그가 있었습니다(토글할 때마다
-    # 숫자가 한 박자 밀려서 오르내림이 뒤죽박죽으로 보이던 원인).
+    # ⚠️ 실행 순서와 화면(시각적) 순서가 다릅니다. 결과 요약(비율 박스+게이지)을
+    # 화면에서는 맨 위에 보여달라는 요청이 있었지만, 그 값은 "이번 rerun에서 토글이
+    # 전부 반영된 뒤" recalculate()로 계산해야 합니다(먼저 계산하면 방금 누른 토글이
+    # 아니라 한 번 전 상태를 보여주는 버그가 남). 그래서 자리(container)만 위에 먼저
+    # 잡아두고, 토글을 그린 뒤 recalculate() 결과로 그 자리를 채우는 순서로 씁니다.
+    summary_placeholder = st.container()
+
     col_a, col_b = st.columns(2)
     with col_a, st.container(border=True):
         st.markdown(f"**🚙 나({result.get('나_역할', 'A')}) 가감요소**")
@@ -282,33 +284,36 @@ with tab_apply:
     # 토글이 전부 반영된 뒤에 딱 한 번 계산 — 이 값을 아래 화면 전체와 탭 밖(법규·판례 등)에서도 씁니다.
     최종과실, 계산_단계 = recalculate(result, st.session_state["applied_mods"])
 
-    st.write("")
-    with st.container(border=True):
-        st.markdown(
-            ratio_hero(
+    # 위에서 미리 잡아둔 자리(summary_placeholder)를 이제 채웁니다 — 화면에는 토글보다
+    # "위"에 보이지만, 계산 자체는 토글이 다 반영된 뒤에 이뤄집니다.
+    with summary_placeholder:
+        with st.container(border=True):
+            st.markdown(
+                ratio_hero(
+                    최종과실["A"], 최종과실["B"], result.get("나_역할", "나"), result.get("상대_역할", "상대")
+                ),
+                unsafe_allow_html=True,
+            )
+            st.caption("기본과실 → 아래 수정요소를 켜면 이 숫자가 즉시 바뀝니다 (재검색 없음)")
+
+            applied_names = [m["조건"] for m in 수정요소 if m["id"] in st.session_state["applied_mods"]]
+            report = consult_report_text(result, 최종과실, applied_names)
+            st.download_button(
+                "📥 이 결과 리포트 다운로드",
+                data=report.encode("utf-8"),
+                file_name=f"과실비율_{result.get('도표번호', 'result')}.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
+
+        st.write("")
+        g_left, g_center, g_right = st.columns([1, 2, 1])
+        with g_center:
+            # plotly 워터폴은 제거 — 토글할 때마다 부드럽게 움직이는 이 게이지 하나로 충분하다는 피드백 반영.
+            react_fault_gauge(
                 최종과실["A"], 최종과실["B"], result.get("나_역할", "나"), result.get("상대_역할", "상대")
-            ),
-            unsafe_allow_html=True,
-        )
-        st.caption("기본과실 → 위 수정요소를 켜면 이 숫자가 즉시 바뀝니다 (재검색 없음)")
-
-        applied_names = [m["조건"] for m in 수정요소 if m["id"] in st.session_state["applied_mods"]]
-        report = consult_report_text(result, 최종과실, applied_names)
-        st.download_button(
-            "📥 이 결과 리포트 다운로드",
-            data=report.encode("utf-8"),
-            file_name=f"과실비율_{result.get('도표번호', 'result')}.txt",
-            mime="text/plain",
-            use_container_width=True,
-        )
-
-    st.write("")
-    g_left, g_center, g_right = st.columns([1, 2, 1])
-    with g_center:
-        # plotly 워터폴은 제거 — 토글할 때마다 부드럽게 움직이는 이 게이지 하나로 충분하다는 피드백 반영.
-        react_fault_gauge(
-            최종과실["A"], 최종과실["B"], result.get("나_역할", "나"), result.get("상대_역할", "상대")
-        )
+            )
+        st.write("")
 
 with tab_expl:
     with st.container(border=True):
