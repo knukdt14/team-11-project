@@ -21,7 +21,6 @@ from woo.components.cv_pipeline import (  # noqa: E402
     analyze_video_evidence,
     assess_fault_from_evidence,
     make_annotated_video_bytes,
-    transcode_bytes_for_browser,
 )
 from woo.components.widgets import hero, inject_css, mascot_say, ratio_hero, sidebar_nav  # noqa: E402
 
@@ -36,22 +35,14 @@ hero(
 st.session_state.setdefault("cv_result", None)
 st.session_state.setdefault("cv_video_path", None)
 st.session_state.setdefault("cv_fps", 10.0)
+st.session_state.setdefault("cv_annotated_video", None)
 
 if st.session_state["cv_result"] is None:
     mascot_say("안녕하세요! 저는 사고 조사관이에요 🔍 교차로 CCTV 영상을 올려주시면 제가 차량을 하나하나 추적해서 충돌 순간을 찾아드릴게요.")
 
+# ⚠️ 업로드 직후엔 원본 영상 미리보기를 안 보여줍니다 — "분석 시작"을 누르면 바로
+# 박스가 따라다니는 추적 영상이 뜨도록(원본 미리보기는 건너뛰고) 바꿨습니다.
 uploaded = st.file_uploader("사고 영상 업로드", type=["mp4", "avi", "mov"])
-
-if uploaded is not None:
-    # ⚠️ 업로드 영상이 FMP4(구형 MPEG-4) 코덱이면 브라우저 <video> 태그가 아예
-    # 재생을 못 해서 검은 화면(0:00)만 보였습니다 — H.264로 다시 인코딩해서 보여줍니다.
-    # 분석 자체(OpenCV 읽기)는 원본 코덱 그대로 문제없이 되므로 분석에는 안 씁니다.
-    with st.spinner("미리보기용으로 변환 중..."):
-        preview_bytes = transcode_bytes_for_browser(uploaded.getvalue(), Path(uploaded.name).suffix)
-    if preview_bytes:
-        st.video(preview_bytes)
-    else:
-        st.caption("⚠️ 이 영상은 브라우저 미리보기로 변환하지 못했습니다 (분석은 정상 진행됩니다).")
 
 if uploaded is not None and st.button("🔍 분석 시작", type="primary", use_container_width=True):
     # ⚠️ NamedTemporaryFile(delete=False)를 씁니다 — services/cv의 Tracker.track_video는
@@ -74,9 +65,18 @@ if uploaded is not None and st.button("🔍 분석 시작", type="primary", use_
     with st.spinner("영상 분석 중입니다 (차량 검출·추적)... 영상 길이에 따라 시간이 걸릴 수 있어요"):
         result = analyze_video_evidence(video_path, out_dir)
 
+    annotated_bytes = None
+    if result["is_accident"]:
+        # 추적 영상은 전체 영상을 다시 한 번 추적해야 해서(계산량 있음) 사고가 감지된
+        # 경우에만 만듭니다 — "분석 시작" 한 번으로 바로 박스 달린 영상이 나오도록
+        # 버튼을 따로 두지 않고 여기서 같이 만들어둡니다.
+        with st.spinner("영상 전체에 박스 추적 그리는 중... (조금 더 걸립니다)"):
+            annotated_bytes = make_annotated_video_bytes(video_path)
+
     st.session_state["cv_result"] = result
     st.session_state["cv_video_path"] = video_path
     st.session_state["cv_fps"] = fps
+    st.session_state["cv_annotated_video"] = annotated_bytes
     st.rerun()
 
 if st.session_state["cv_result"] is not None:
@@ -95,17 +95,13 @@ if st.session_state["cv_result"] is not None:
         st.success(f"✅ 사고 감지됨 — 충돌 순간: {impact}프레임 (약 {impact / fps:.1f}초)")
 
         st.markdown("**🎬 YOLO 추적 영상**")
-        # ⚠️ 근거 프레임 추출과 별개로 영상 전체를 다시 한 번 추적합니다(계산량 있음) —
-        # 그래서 자동이 아니라 버튼으로만 돌립니다. 박스가 계속 따라다니는 영상 + 충돌
-        # 순간 빨간 테두리는 근거 프레임(정지 이미지)보다 한눈에 훨씬 잘 들어옵니다.
-        if st.button("🎬 추적 영상 만들기", use_container_width=True):
-            with st.spinner("영상 전체에 박스 추적 그리는 중... (조금 걸립니다)"):
-                annotated_bytes = make_annotated_video_bytes(st.session_state["cv_video_path"])
-            if annotated_bytes:
-                st.video(annotated_bytes)
-                st.caption("차량에 박스가 따라다니며, 빨간 테두리가 충돌 순간입니다.")
-            else:
-                st.caption("⚠️ 추적 영상을 브라우저 재생용으로 변환하지 못했습니다.")
+        # "분석 시작" 클릭 시점에 이미 만들어둔 걸 그대로 보여줍니다(원본 미리보기 없이
+        # 바로 이 추적 영상이 뜨는 게 목표라 버튼을 따로 두지 않았습니다).
+        if st.session_state["cv_annotated_video"]:
+            st.video(st.session_state["cv_annotated_video"])
+            st.caption("차량에 박스가 따라다니며, 빨간 테두리가 충돌 순간입니다.")
+        else:
+            st.caption("⚠️ 추적 영상을 브라우저 재생용으로 변환하지 못했습니다.")
 
         st.markdown("**📸 사고 근거 프레임**")
         paths = result["frame_paths"]
