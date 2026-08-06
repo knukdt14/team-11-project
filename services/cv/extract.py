@@ -142,3 +142,56 @@ def extract_evidence(video_path, out_dir, tracker=None,
         "frame_paths": frame_paths,
         "boxes_at_impact": frames_boxes[impact] if impact < len(frames_boxes) else [],
     }
+
+
+def make_annotated_video(video_path, out_path, tracker=None, fps=10):
+    """
+    영상 전체에 YOLO 박스를 그려 새 mp4로 저장. (박스가 계속 따라다니는 영상)
+    추출 프레임(띄엄띄엄)이 아니라 원본 전 프레임을 원본 fps로 처리해 부드럽다.
+
+    반환: (out_path, impact_frame)  impact는 밝기 보정된 충돌 순간.
+    브라우저 재생 호환을 위해 avc1(H.264) 코덱 우선, 실패 시 mp4v.
+    """
+    tracker = tracker or Tracker()
+    frames_boxes = tracker.track_video(video_path)
+
+    # 충돌 순간(밝기 보정 포함)
+    feats = video_to_features(frames_boxes)
+    is_acc, _, impact = detect_from_features(feats)
+    if is_acc:
+        impact = _refine_impact_by_brightness(video_path, impact, len(frames_boxes))
+
+    cap = cv2.VideoCapture(str(video_path))
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    src_fps = cap.get(cv2.CAP_PROP_FPS) or fps
+
+    out_path = str(out_path)
+    # 브라우저 호환 코덱 우선
+    writer = None
+    for cc in ("avc1", "mp4v"):
+        writer = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*cc), src_fps, (w, h))
+        if writer.isOpened():
+            break
+    if writer is None or not writer.isOpened():
+        cap.release()
+        raise RuntimeError("VideoWriter 열기 실패")
+
+    idx = 0
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        boxes = frames_boxes[idx] if idx < len(frames_boxes) else []
+        img = draw_boxes(frame, boxes)
+        # 충돌 순간 프레임엔 빨간 테두리 + 문구
+        if is_acc and idx == impact:
+            cv2.rectangle(img, (0, 0), (w - 1, h - 1), (0, 0, 255), 6)
+            cv2.putText(img, "COLLISION", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2, cv2.LINE_AA)
+        writer.write(img)
+        idx += 1
+
+    cap.release()
+    writer.release()
+    return out_path, (impact if is_acc else None)

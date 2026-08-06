@@ -36,7 +36,7 @@ if uploaded:
     st.video(str(video_path))
 
     if st.button("분석 시작", type="primary"):
-        from services.cv.extract import extract_evidence
+        from services.cv.extract import extract_evidence, make_annotated_video
         from services.cv.gemini_fault import assess_fault
 
         tracker, searcher = load_tools()
@@ -51,6 +51,14 @@ if uploaded:
             st.stop()
 
         st.success(f"사고 감지! (사고 순간: {ev['impact_frame']}번 프레임)")
+
+        # 박스 따라다니는 동영상 (영상 전체에 YOLO 박스)
+        st.subheader("🎬 YOLO 추적 영상")
+        with st.spinner("박스 영상 생성 중..."):
+            annotated_path = tmp / "annotated.mp4"
+            make_annotated_video(video_path, annotated_path, tracker=tracker)
+        st.video(str(annotated_path))
+        st.caption("차량에 박스가 따라다니며, 빨간 테두리가 충돌 순간입니다.")
 
         # 2) 프레임 시각화 (wow 포인트)
         st.subheader("📸 사고 근거 프레임")

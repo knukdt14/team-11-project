@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from woo.components.cv_pipeline import (  # noqa: E402
     analyze_video_evidence,
     assess_fault_from_evidence,
+    make_annotated_video_bytes,
     transcode_bytes_for_browser,
 )
 from woo.components.widgets import hero, inject_css, mascot_say, ratio_hero, sidebar_nav  # noqa: E402
@@ -92,6 +93,19 @@ if st.session_state["cv_result"] is not None:
             "아래에서 근거 프레임을 직접 확인해보세요."
         )
         st.success(f"✅ 사고 감지됨 — 충돌 순간: {impact}프레임 (약 {impact / fps:.1f}초)")
+
+        st.markdown("**🎬 YOLO 추적 영상**")
+        # ⚠️ 근거 프레임 추출과 별개로 영상 전체를 다시 한 번 추적합니다(계산량 있음) —
+        # 그래서 자동이 아니라 버튼으로만 돌립니다. 박스가 계속 따라다니는 영상 + 충돌
+        # 순간 빨간 테두리는 근거 프레임(정지 이미지)보다 한눈에 훨씬 잘 들어옵니다.
+        if st.button("🎬 추적 영상 만들기", use_container_width=True):
+            with st.spinner("영상 전체에 박스 추적 그리는 중... (조금 걸립니다)"):
+                annotated_bytes = make_annotated_video_bytes(st.session_state["cv_video_path"])
+            if annotated_bytes:
+                st.video(annotated_bytes)
+                st.caption("차량에 박스가 따라다니며, 빨간 테두리가 충돌 순간입니다.")
+            else:
+                st.caption("⚠️ 추적 영상을 브라우저 재생용으로 변환하지 못했습니다.")
 
         st.markdown("**📸 사고 근거 프레임**")
         paths = result["frame_paths"]

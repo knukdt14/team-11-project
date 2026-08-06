@@ -188,6 +188,25 @@ def analyze_video_evidence(video_path: str, out_dir: str) -> dict:
     return extract_evidence(video_path, out_dir, tracker=tracker)
 
 
+def make_annotated_video_bytes(video_path: str) -> bytes | None:
+    """영상 전체에 박스가 따라다니고 충돌 순간엔 빨간 테두리가 뜨는 영상을 만들어
+    브라우저에서 바로 재생할 수 있는 바이트로 반환합니다.
+
+    hani의 `extract.make_annotated_video()`를 그대로 호출합니다. 이 함수는 avc1(H.264)을
+    먼저 시도하고 실패하면 mp4v로 저장하는데, 이 개발 환경엔 OpenH264 인코더가 없어서
+    항상 mp4v로 떨어집니다 — mp4v는 앞서 겪은 것과 똑같이 브라우저가 못 읽는 코덱이라,
+    저장된 파일을 다시 `transcode_for_browser()`(imageio-ffmpeg)로 H.264 변환해서
+    돌려줍니다. 실패하면 None(호출 쪽에서 "생성은 됐지만 미리보기만 안 됨"으로 처리).
+    """
+    from services.cv.extract import make_annotated_video
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+        raw_out_path = tmp.name
+    tracker = _tracker()
+    make_annotated_video(video_path, raw_out_path, tracker=tracker)
+    return transcode_for_browser(raw_out_path)
+
+
 def assess_fault_from_evidence(frame_paths: list[str], api_key: str | None = None) -> dict:
     """이미 뽑아둔 근거 프레임(frame_paths)으로 Gemini+RAG 과실 판정만 돌립니다.
 
