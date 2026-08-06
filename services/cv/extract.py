@@ -40,6 +40,40 @@ def draw_boxes(frame, boxes):
     return img
 
 
+def _refine_impact_by_brightness(video_path, impact, n_frames, search=8):
+    """
+    IoU 기반 impact를 밝기 급락으로 보정.
+    impact 이후 search 프레임 안에서 '밝기가 가장 크게 떨어지는' 프레임을 찾는다.
+    급락이 뚜렷하지 않으면(평범한 영상) 원래 impact를 그대로 둔다.
+    """
+    cap = cv2.VideoCapture(str(video_path))
+    bright = []
+    while True:
+        ok, f = cap.read()
+        if not ok:
+            break
+        bright.append(float(f.mean()))
+    cap.release()
+
+    if len(bright) < 2:
+        return impact
+
+    # 프레임별 밝기 변화량 (음수 = 어두워짐)
+    lo = impact
+    hi = min(n_frames - 1, impact + search)
+    best_frame, best_drop = impact, 0.0
+    for t in range(lo + 1, hi + 1):
+        if t >= len(bright):
+            break
+        drop = bright[t] - bright[t - 1]   # 음수일수록 급락
+        if drop < best_drop:
+            best_drop = drop
+            best_frame = t
+
+    # 급락이 확실할 때만 보정 (밝기 -20 이상 떨어질 때). 아니면 원래대로.
+    return best_frame if best_drop <= -20 else impact
+
+
 def extract_evidence(video_path, out_dir, tracker=None,
                      window_sec=1.0, stride=2, fps=10):
     """
@@ -67,6 +101,12 @@ def extract_evidence(video_path, out_dir, tracker=None,
     if not is_acc:
         return {"is_accident": False, "impact_frame": None,
                 "frame_paths": [], "boxes_at_impact": []}
+
+    # 1-b) 충돌 순간 보정 (밝기 급락)
+    #   충돌 직전 차가 코앞으로 들어오면 카메라 시야가 막혀 화면이 급격히 어두워진다.
+    #   IoU 최대 지점은 '스쳐 보인 순간'일 수 있어, 감지 이후 구간에서
+    #   밝기가 가장 크게 떨어지는 프레임을 실제 충돌로 본다.
+    impact = _refine_impact_by_brightness(video_path, impact, len(frames_boxes))
 
     # 2) 뽑을 프레임 범위 정하기 (impact ± window)
     half = int(window_sec * fps)
@@ -102,3 +142,56 @@ def extract_evidence(video_path, out_dir, tracker=None,
         "frame_paths": frame_paths,
         "boxes_at_impact": frames_boxes[impact] if impact < len(frames_boxes) else [],
     }
+
+
+def make_annotated_video(video_path, out_path, tracker=None, fps=10):
+    """
+    영상 전체에 YOLO 박스를 그려 새 mp4로 저장. (박스가 계속 따라다니는 영상)
+    추출 프레임(띄엄띄엄)이 아니라 원본 전 프레임을 원본 fps로 처리해 부드럽다.
+
+    반환: (out_path, impact_frame)  impact는 밝기 보정된 충돌 순간.
+    브라우저 재생 호환을 위해 avc1(H.264) 코덱 우선, 실패 시 mp4v.
+    """
+    tracker = tracker or Tracker()
+    frames_boxes = tracker.track_video(video_path)
+
+    # 충돌 순간(밝기 보정 포함)
+    feats = video_to_features(frames_boxes)
+    is_acc, _, impact = detect_from_features(feats)
+    if is_acc:
+        impact = _refine_impact_by_brightness(video_path, impact, len(frames_boxes))
+
+    cap = cv2.VideoCapture(str(video_path))
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    src_fps = cap.get(cv2.CAP_PROP_FPS) or fps
+
+    out_path = str(out_path)
+    # 브라우저 호환 코덱 우선
+    writer = None
+    for cc in ("avc1", "mp4v"):
+        writer = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*cc), src_fps, (w, h))
+        if writer.isOpened():
+            break
+    if writer is None or not writer.isOpened():
+        cap.release()
+        raise RuntimeError("VideoWriter 열기 실패")
+
+    idx = 0
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        boxes = frames_boxes[idx] if idx < len(frames_boxes) else []
+        img = draw_boxes(frame, boxes)
+        # 충돌 순간 프레임엔 빨간 테두리 + 문구
+        if is_acc and idx == impact:
+            cv2.rectangle(img, (0, 0), (w - 1, h - 1), (0, 0, 255), 6)
+            cv2.putText(img, "COLLISION", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2, cv2.LINE_AA)
+        writer.write(img)
+        idx += 1
+
+    cap.release()
+    writer.release()
+    return out_path, (impact if is_acc else None)

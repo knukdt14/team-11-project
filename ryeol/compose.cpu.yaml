@@ -7,7 +7,10 @@ services:
       - path: .env
         required: false
     environment:
-      LLM_MODE: mock
+      LLM_MODE: ${LLM_MODE:-mock}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.6-flash}
+      GEMINI_TIMEOUT: ${GEMINI_TIMEOUT:-20}
       SEARCH_RERANK: "false"
       HF_HOME: /cache/huggingface
       SESSION_DB_PATH: /runtime/sessions.sqlite3
@@ -26,7 +29,7 @@ services:
   frontend:
     build:
       context: ..
-      dockerfile: ryeol/Dockerfile.frontend
+      dockerfile: woo/Dockerfile
     environment:
       BACKEND_URL: http://backend:8000
     ports:

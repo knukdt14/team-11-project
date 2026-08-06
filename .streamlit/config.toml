@@ -1,0 +1,11 @@
+# 4번(전승우) 상담 UI가 라이트 테마로 디자인돼 있어서, OS/브라우저가 다크모드 선호일 때
+# Streamlit이 자동으로 다크 테마를 골라 텍스트/입력창 색이 우리 배경과 충돌하는 문제를
+# 막기 위해 라이트로 고정합니다. hani/taek/ryeol 코드와는 무관하고 화면 표시만 바뀝니다.
+[theme]
+base = "light"
+
+[server]
+port = 8600
+
+[browser]
+gatherUsageStats = false

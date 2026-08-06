@@ -6,20 +6,24 @@
 
 ## 0. Docker로 웹 전체 실행
 
-NVIDIA GPU PC의 기본 명령입니다. Qwen과 GPU 리랭킹까지 실행합니다.
+저장소 루트에서 기본 명령입니다. GPU 없이 `LLM_MODE=mock`으로 동작하며 Codespaces에서도 그대로 씁니다.
 
 ```bash
-cd ryeol
 docker compose up --build -d
 ```
 
 Streamlit은 8501, FastAPI Swagger는 8000 포트입니다.
 
-GPU 오류가 나거나 GPU가 없는 PC·Codespaces에서는 CPU fallback을 사용합니다.
+GPU 없이도 실제 AI 설명 문장을 받고 싶으면 [Gemini API 키](https://aistudio.google.com/)를 받아서:
 
 ```bash
-cd ryeol
-docker compose -f compose.cpu.yaml up --build -d --remove-orphans
+GEMINI_API_KEY=발급받은키 LLM_MODE=gemini docker compose up --build -d
+```
+
+NVIDIA GPU PC에서 EXAONE 실답변과 GPU 리랭킹까지 쓰려면 대신 이걸 실행하세요.
+
+```bash
+docker compose -f docker-compose.gpu.yml up --build -d --remove-orphans
 ```
 
 Codespaces의 자세한 실행법은 [`CODESPACES.md`](CODESPACES.md)를 참고하세요.

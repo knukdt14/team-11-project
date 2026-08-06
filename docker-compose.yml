@@ -1,0 +1,54 @@
+# 기본 실행 파일 — Codespaces·GPU 없는 PC용. 실제 팀 대시보드(woo) + 3번 백엔드(ryeol)를
+# Ollama 없이 띄웁니다. 검색·과실 계산·화면은 항상 실제 기능입니다.
+#
+# 실행:
+#   docker compose up --build
+#   → Codespaces: PORTS 탭에서 8501(Streamlit) 열기, 8000은 FastAPI Swagger(/docs)
+#   → 로컬(GPU 없음): http://localhost:8501, http://localhost:8000/docs
+#
+# LLM 설명 문장:
+#   기본은 LLM_MODE=mock(정형 문장, 키 필요 없음)입니다.
+#   GEMINI_API_KEY를 넣고 LLM_MODE=gemini로 실행하면 GPU 없이도 실제 AI가 쓴 설명을 받습니다.
+#     GEMINI_API_KEY=발급받은키 LLM_MODE=gemini docker compose up --build
+#   (검색 정밀 재정렬은 별도 기능이라 이 키와 무관하게 계속 꺼져 있습니다 — CPU에서 느려서 기본 비활성.)
+#
+# GPU가 있는 PC에서 EXAONE 실답변과 재정렬까지 쓰려면 대신 이걸 실행하세요:
+#   docker compose -f docker-compose.gpu.yml up --build -d
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: ryeol/Dockerfile.backend
+    environment:
+      LLM_MODE: ${LLM_MODE:-mock}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.6-flash}
+      GEMINI_TIMEOUT: ${GEMINI_TIMEOUT:-20}
+      SEARCH_RERANK: "false"
+      SESSION_DB_PATH: /runtime/sessions.sqlite3
+    volumes:
+      - ryeol-runtime:/runtime
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 120s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: woo/Dockerfile
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  ryeol-runtime:
