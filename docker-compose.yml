@@ -1,92 +1,54 @@
-# 통합 시연 환경 — 우리 프론트(woo) + 3번의 진짜 백엔드(ryeol) + Ollama(EXAONE, GPU).
-#
-# ⚠️ ryeol/compose.yaml 이 이미 있지만 그건 3번이 자기 API 스모크테스트용으로 만든
-#    최소 프론트(`ryeol/frontend_smoke/app.py`)와 짝지어져 있습니다. 여기서는 그 백엔드+
-#    Ollama 구성은 그대로 가져오고, 프론트만 **실제 우리 대시보드(woo/)** 로 바꿨습니다.
-#
-# ⚠️ 원래는 Qwen3:8b를 썼는데, 3번의 follow-up 버그 수정(b6b549e) 이후 실측해보니
-#    Qwen3:8b는 "thinking" 모드가 답변 토큰(num_predict=512)을 생각하는 데 다 써버려서
-#    후속 질문(/follow-up)에 계속 빈 응답 → 정형 문구로 대체되는 걸 확인했습니다.
-#    3번이 실제로 검증한 모델은 exaone3.5:2.4b(생각 모드 없음)라서 그걸로 바꿨습니다.
-#
-# GPU가 필요합니다 (Ollama로 실제 LLM 답변). GPU가 없으면 backend/ollama의
-# `gpus: all`을 지우고 backend 환경변수를 LLM_MODE=mock, SEARCH_RERANK=false로 바꾸세요
-# (검색·계산·화면은 그대로 실제 동작, LLM 설명문만 정형 문구로 대체됩니다).
+# 기본 실행 파일 — Codespaces·GPU 없는 PC용. 실제 팀 대시보드(woo) + 3번 백엔드(ryeol)를
+# Ollama 없이 띄웁니다. 검색·과실 계산·화면은 항상 실제 기능입니다.
 #
 # 실행:
 #   docker compose up --build
-#   → http://localhost:8502 (프론트)   http://localhost:8010/health (백엔드 상태)
-#   최초 실행은 EXAONE 3.5 2.4b 다운로드 때문에 다소 걸립니다.
+#   → Codespaces: PORTS 탭에서 8501(Streamlit) 열기, 8000은 FastAPI Swagger(/docs)
+#   → 로컬(GPU 없음): http://localhost:8501, http://localhost:8000/docs
 #
-# ⚠️ 호스트 포트 8010/8502를 씁니다(표준 8000/8501 아님) — 이 개발 PC에 이미 무관한
-#    프로젝트(pdf-rag-chatbot)가 8000/8501을 쓰고 있어서 충돌을 피하려고 옮겼습니다.
-#    컨테이너 내부 통신(BACKEND_URL=http://backend:8000)은 그대로라 영향 없습니다.
+# LLM 설명 문장:
+#   기본은 LLM_MODE=mock(정형 문장, 키 필요 없음)입니다.
+#   GEMINI_API_KEY를 넣고 LLM_MODE=gemini로 실행하면 GPU 없이도 실제 AI가 쓴 설명을 받습니다.
+#     GEMINI_API_KEY=발급받은키 LLM_MODE=gemini docker compose up --build
+#   (검색 정밀 재정렬은 별도 기능이라 이 키와 무관하게 계속 꺼져 있습니다 — CPU에서 느려서 기본 비활성.)
+#
+# GPU가 있는 PC에서 EXAONE 실답변과 재정렬까지 쓰려면 대신 이걸 실행하세요:
+#   docker compose -f docker-compose.gpu.yml up --build -d
 
 services:
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
-    gpus: all
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-
-  ollama-init:
-    image: ollama/ollama:latest
-    entrypoint: ["ollama"]
-    command: ["pull", "${OLLAMA_MODEL:-exaone3.5:2.4b}"]
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-    depends_on:
-      ollama:
-        condition: service_healthy
-    restart: "no"
-
   backend:
     build:
       context: .
       dockerfile: ryeol/Dockerfile.backend
     environment:
-      # ⚠️ 3번의 b6b549e 수정으로 llm.py의 LLM_MODE에서 "qwen"이 아예 없어졌습니다
-      # (이제 mock / gemini / exaone(ollama) / auto 만 지원). exaone3.5:2.4b로 실측
-      # 확인함 — 아래 OLLAMA_MODEL 참고.
-      - LLM_MODE=exaone
-      - OLLAMA_URL=http://ollama:11434
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-exaone3.5:2.4b}
-      - SEARCH_RERANK=true     # 애매한 질문 정밀 재정렬 — 느리지만(질문당 ~7초) 정확도용.
-      - SESSION_DB_PATH=/runtime/sessions.sqlite3
-    gpus: all
+      LLM_MODE: ${LLM_MODE:-mock}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.6-flash}
+      GEMINI_TIMEOUT: ${GEMINI_TIMEOUT:-20}
+      SEARCH_RERANK: "false"
+      SESSION_DB_PATH: /runtime/sessions.sqlite3
     volumes:
       - ryeol-runtime:/runtime
     ports:
-      - "8010:8000"
-    depends_on:
-      ollama-init:
-        condition: service_completed_successfully
+      - "8000:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 5s
       retries: 60
-      start_period: 300s
+      start_period: 120s
 
   frontend:
     build:
       context: .
       dockerfile: woo/Dockerfile
-    ports:
-      - "8502:8501"
     environment:
-      - BACKEND_URL=http://backend:8000
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "8501:8501"
     depends_on:
       backend:
         condition: service_healthy
 
 volumes:
-  ollama-data:
   ryeol-runtime:
