@@ -240,6 +240,9 @@ hani/*.txt
 data/jobs/
 *.mp4
 
+# Flask 영상분석 임시 프레임 (요청마다 새로 생성됨, 커밋 불필요)
+flaskapp/static/tmp/
+
 # CCD 데이터셋 (CarCrash) — 영상·feature 수십 GB, 저장소에 절대 안 올림
 CarCrash/
 **/CarCrash/

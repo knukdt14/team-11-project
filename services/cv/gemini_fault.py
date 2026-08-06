@@ -17,11 +17,24 @@ CV(extract)가 뽑은 frame_paths 만 넣으면 된다.
 import json
 import os
 
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+# 어느 진입점(streamlit_cv.py, woo/, 단독 스크립트)에서 import되든 .env를 자동으로
+# 읽도록 모듈 로드 시점에 한 번 로드한다. 이 파일 기준 두 단계 위(repo 루트)의 .env.
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"))
 
-MODEL = "gemini-2.5-flash"   # 이미지 판단 + 무료 티어
+
+MODEL = "gemini-flash-lite-latest"   # 이미지 판단 + 무료 티어 (flash 대비 TPM 30배 여유)
+
+
+def _parse_json_lenient(text):
+    """flash-lite가 완전한 JSON 뒤에 문장 조각을 더 흘려보내는 경우가 있어서,
+    첫 번째 완전한 JSON 객체만 파싱하고 뒤에 붙는 쓰레기는 무시한다."""
+    decoder = json.JSONDecoder()
+    obj, _ = decoder.raw_decode(text.strip())
+    return obj
 
 
 def _client(api_key=None):
@@ -61,7 +74,7 @@ def _situation(client, image_parts):
             response_mime_type="application/json",
         ),
     )
-    return json.loads(resp.text)
+    return _parse_json_lenient(resp.text)
 
 
 def _final(client, image_parts, situation, hits):
@@ -94,7 +107,7 @@ def _final(client, image_parts, situation, hits):
             response_mime_type="application/json",
         ),
     )
-    return json.loads(resp.text)
+    return _parse_json_lenient(resp.text)
 
 
 def assess_fault(frame_paths, searcher, api_key=None, top_k=3):
