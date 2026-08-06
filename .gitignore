@@ -61,6 +61,16 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
+# webapp(NiceGUI) 로그인 계정 + 상담 히스토리 DB — 비밀번호 해시가 들어있어 커밋 금지
+webapp/data/
+
+# NiceGUI 런타임 세션 저장소 (로컬 전용)
+.nicegui/
+
+# ryeol-v3 브랜치 확인용으로 워크스페이스 안에 통째로 clone해둔 폴더
+# (자체 .git이 있는 완전히 별도의 저장소라 여기 커밋하면 안 됨)
+ryeol-v3/
+
 # Flask stuff:
 instance/
 .webassets-cache

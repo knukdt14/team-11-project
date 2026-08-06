@@ -25,7 +25,6 @@ from google.genai import types
 # 읽도록 모듈 로드 시점에 한 번 로드한다. 이 파일 기준 두 단계 위(repo 루트)의 .env.
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"))
 
-
 MODEL = "gemini-flash-lite-latest"   # 이미지 판단 + 무료 티어 (flash 대비 TPM 30배 여유)
 
 
