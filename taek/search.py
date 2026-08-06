@@ -432,7 +432,8 @@ class Searcher:
            단순 문자열 치환으로는 매칭이 실패합니다. 공백을 모두 정규화합니다.
         """
         s = no.replace("\u00a0", " ").replace("도로교통법", "")
-        return f"ROAD-{re.sub(r'[\s]+', '', s)}"
+        cleaned = re.sub(r'[\s]+', '', s)
+        return f"ROAD-{cleaned}"
 
     def cases(self, query: str, top_k: int = 3) -> list[Hit]:
         """
