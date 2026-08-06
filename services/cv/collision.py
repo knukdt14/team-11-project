@@ -19,10 +19,9 @@ tune_collision.py가 CCD 정답(binlabels)으로 제일 잘 맞는 값을 골라
 import numpy as np
 
 # CCD 튜닝으로 채워질 기본 임계값 (tune_collision.py 결과로 갱신)
-DEFAULT_IOU_TH = 0.30
-DEFAULT_ACCEL_TH = 8.0
-# 두 신호를 and로 볼지 or로 볼지도 튜닝에서 결정
-DEFAULT_MODE = "or"   # "and" | "or"
+DEFAULT_IOU_TH = 0.4
+DEFAULT_ACCEL_TH = 4.0
+DEFAULT_MODE = "or"
 
 
 def detect_from_features(feats, iou_th=DEFAULT_IOU_TH,
