@@ -614,9 +614,23 @@ async function analyzeVideo(file) {
       return;
     }
 
-    const frames = (data.frames || []).map(f =>
-      `<img src="${f.url}" class="${f.is_impact ? 'impact' : ''}">`
-    ).join('');
+    const frames = (data.frames || []).map(f => `
+      <div class="frame-item">
+        <img src="${f.url}">
+        <span class="frame-caption${f.is_impact ? ' impact' : ''}">${f.is_impact ? '⚡ 충돌 순간' : ''}</span>
+      </div>
+    `).join('');
+
+    // ⚠️ 추적 영상은 결과 패널에 별도 섹션을 새로 만들지 않고, 업로드 미리보기가
+    // 있던 그 자리(dropzoneContent)의 <video> src를 그대로 바꿔치기합니다.
+    if (data.tracked_video_url) {
+      const previewVideo = document.querySelector('#dropzoneContent video');
+      if (previewVideo) {
+        previewVideo.src = data.tracked_video_url;
+        previewVideo.muted = false;
+        previewVideo.load();
+      }
+    }
 
     let faultHtml = '';
     if (data.fault_error) {
@@ -642,7 +656,7 @@ async function analyzeVideo(file) {
     document.getElementById('videoResult').innerHTML = `
       <div class="panel">
         <p>✅ 사고 감지됨 — 충돌 순간: ${data.impact_frame}프레임</p>
-        <h3>사고 근거 프레임</h3>
+        <h3 style="margin-top:14px;">사고 근거 프레임</h3>
         <div class="frame-grid">${frames}</div>
       </div>
       ${faultHtml}

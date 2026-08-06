@@ -26,7 +26,7 @@ from google.genai import types
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"))
 
 
-MODEL = "gemini-2.5-flash-lite"   # 이미지 판단 + 무료 티어 (flash 대비 TPM 30배 여유)
+MODEL = "gemini-flash-lite-latest"   # 이미지 판단 + 무료 티어 (flash 대비 TPM 30배 여유)
 
 
 def _parse_json_lenient(text):

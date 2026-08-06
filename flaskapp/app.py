@@ -33,6 +33,34 @@ HANI_DATA = REPO_ROOT / "hani" / "data"
 TMP_FRAMES = Path(__file__).resolve().parent / "static" / "tmp"
 TMP_FRAMES.mkdir(parents=True, exist_ok=True)
 
+
+def _transcode_for_browser(video_path: str) -> bytes | None:
+    """브라우저 호환 코덱(H.264)으로 재인코딩 (imageio-ffmpeg 정적 바이너리 사용).
+
+    webapp/services/cv_pipeline.py의 transcode_for_browser()와 동일한 방식 —
+    hani의 make_annotated_video()가 만드는 mp4v 코덱은 크롬/엣지에서 재생이
+    안 되는 경우가 있어서, ffmpeg로 libx264로 다시 인코딩합니다.
+    """
+    import subprocess
+
+    import imageio_ffmpeg
+
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+        out_path = tmp.name
+    cmd = [
+        ffmpeg_exe, "-y", "-i", str(video_path),
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+        out_path,
+    ]
+    try:
+        subprocess.run(cmd, capture_output=True, timeout=120, check=True)
+        return Path(out_path).read_bytes()
+    except Exception:
+        return None
+    finally:
+        Path(out_path).unlink(missing_ok=True)
+
 app = Flask(__name__)
 # ⚠️ 개발 중 static/js/app.js·css를 자주 고치는데, 브라우저가 캐시해둔 예전 파일을
 # 계속 쓰는 바람에 "고쳤는데도 예전 동작 그대로"인 혼란이 반복됐습니다(영상 재생 버튼을
@@ -186,7 +214,7 @@ def video_analyze():
     로직을 새로 만들지 않습니다. 프레임은 flaskapp/static/tmp/<job>/ 에 저장해서
     Flask 기본 정적 서빙으로 바로 브라우저에 보여줍니다.
     """
-    from services.cv.extract import extract_evidence
+    from services.cv.extract import extract_evidence, make_annotated_video
     from services.cv.track import Tracker
 
     file = request.files.get("video")
@@ -206,11 +234,11 @@ def video_analyze():
         tracker = Tracker()
         result = extract_evidence(video_path, out_dir, tracker=tracker)
     except Exception as exc:  # noqa: BLE001 — 사용자에게 원인을 그대로 보여주기 위함
-        return jsonify({"error": f"영상 분석 실패: {exc}"}), 500
-    finally:
         Path(video_path).unlink(missing_ok=True)
+        return jsonify({"error": f"영상 분석 실패: {exc}"}), 500
 
     if not result["is_accident"]:
+        Path(video_path).unlink(missing_ok=True)
         return jsonify({"is_accident": False})
 
     frames = []
@@ -223,6 +251,24 @@ def video_analyze():
         "impact_frame": result["impact_frame"],
         "frames": frames,
     }
+
+    # ── YOLO 박스가 따라다니는 추적 영상 (브라우저 재생용 H.264로 트랜스코딩) ──
+    # video_path는 여기까지 쓰고 나서 지웁니다 — 이 시점보다 먼저 지우면 원본 영상이
+    # 없어서 추적 영상을 못 만듭니다(예전에 분석 직후 바로 지워서 생기던 버그).
+    try:
+        raw_tracked = out_dir / "tracked_raw.mp4"
+        make_annotated_video(video_path, str(raw_tracked), tracker=tracker)
+        tracked_bytes = _transcode_for_browser(str(raw_tracked))
+        raw_tracked.unlink(missing_ok=True)
+        if tracked_bytes:
+            tracked_path = out_dir / "tracked.mp4"
+            tracked_path.write_bytes(tracked_bytes)
+            rel = tracked_path.relative_to(TMP_FRAMES.parent)
+            payload["tracked_video_url"] = f"/static/{rel.as_posix()}"
+    except Exception:  # noqa: BLE001 — 추적 영상은 실패해도 나머지 결과는 그대로 보여줍니다.
+        pass
+    finally:
+        Path(video_path).unlink(missing_ok=True)
 
     try:
         from services.cv.gemini_fault import assess_fault
