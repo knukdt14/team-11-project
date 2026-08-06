@@ -8,7 +8,7 @@ from dataclasses import dataclass
 class Settings:
     llm_mode: str = os.getenv("LLM_MODE", "auto").lower()
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
     ollama_url: str = os.getenv("OLLAMA_URL", "http://ollama:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "exaone3.5:2.4b")
     search_rerank: bool = os.getenv("SEARCH_RERANK", "true").lower() in {"1", "true", "yes"}

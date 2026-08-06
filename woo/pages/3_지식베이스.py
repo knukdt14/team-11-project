@@ -9,12 +9,12 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from woo.components.kb_data import SOURCE_LABELS, source_label  # noqa: E402
-from woo.components.widgets import hero, inject_css, sidebar_nav  # noqa: E402
+from woo.components.kb_data import SOURCE_LABELS, source_label, standards  # noqa: E402
+from woo.components.widgets import hero, inject_css, top_nav  # noqa: E402
 
 st.set_page_config(page_title="지식베이스 · 과실비율", page_icon="📚", layout="wide")
 inject_css()
-sidebar_nav("kb")
+top_nav("kb")
 hero("📚 지식베이스 탐색", "상담 없이 도표·판례·법령을 직접 검색해볼 수 있습니다.")
 
 
@@ -23,6 +23,31 @@ def _searcher():
     from taek.search import Searcher
 
     return Searcher()
+
+
+@st.dialog("도표 상세", width="large")
+def _kb_show_detail(s: dict) -> None:
+    """카드 클릭 시 뜨는 상세 모달 (목업의 KB 카드 클릭→모달과 동일한 동작)."""
+    r = s.get("base_ratio") or {}
+    st.markdown(f"### {s.get('diagram_no', '')} · {s.get('title', '')}")
+    st.caption(f"{source_label(s.get('source_id', ''))} · p.{s.get('source_page', '?')}")
+
+    img_path = Path(__file__).resolve().parent.parent.parent / "hani" / "data" / (s.get("image_path") or "")
+    if s.get("image_path") and img_path.exists():
+        st.image(str(img_path))
+
+    st.markdown(f"**기본과실**: A {r.get('a', '?')}% : B {r.get('b', '?')}%")
+    if s.get("accident_description"):
+        st.markdown(f"**사고 상황**\n\n{s['accident_description']}")
+    if s.get("modifiers"):
+        st.markdown("**수정요소**")
+        for m in s["modifiers"]:
+            st.caption(f"- {m['name']} ({'+' if m['adjustment'] >= 0 else ''}{m['adjustment']}, 대상 {m['target']})")
+    if s.get("laws"):
+        st.caption("관련 법령: " + ", ".join(s["laws"]))
+    if s.get("precedents"):
+        st.caption("참조 판례: " + ", ".join(s["precedents"]))
+    st.markdown('<span class="fr-badge fr-badge-official">공식 기준</span>', unsafe_allow_html=True)
 
 
 with st.container(border=True):
@@ -79,7 +104,55 @@ if go and query.strip():
 elif go:
     st.warning("검색어를 입력해주세요.")
 else:
-    st.caption("검색어를 입력하고 검색 버튼을 누르면 결과가 여기 표시됩니다.")
+    # ── 둘러보기: 검색 안 해도 실데이터(hani/data/processed/payloads.json)를
+    #    바로 카드로 훑어볼 수 있게. 목업의 트리필터·카드그리드·모달을 여기서 구현.
+    st.write("")
+    st.markdown('<div class="fr-section-title">🗂️ 도표 둘러보기</div>', unsafe_allow_html=True)
+
+    all_standards = standards()
+    browse_sources = sorted({s.get("source_id") for s in all_standards if s.get("source_id")})
+    chip_labels = ["전체"] + [source_label(s) for s in browse_sources]
+    chip_values = ["전체"] + browse_sources
+
+    st.session_state.setdefault("kb_browse_source", "전체")
+    st.session_state.setdefault("kb_browse_n", 30)
+
+    chip_cols = st.columns(len(chip_values))
+    for col, label, value in zip(chip_cols, chip_labels, chip_values, strict=False):
+        with col:
+            is_active = st.session_state["kb_browse_source"] == value
+            if st.button(label, key=f"kbchip_{value}", use_container_width=True,
+                         type="primary" if is_active else "secondary"):
+                st.session_state["kb_browse_source"] = value
+                st.session_state["kb_browse_n"] = 30
+                st.rerun()
+
+    filtered = [
+        s for s in all_standards
+        if st.session_state["kb_browse_source"] == "전체" or s.get("source_id") == st.session_state["kb_browse_source"]
+    ]
+    st.caption(f"총 {len(filtered)}건")
+
+    shown = filtered[: st.session_state["kb_browse_n"]]
+    grid_cols = st.columns(3)
+    for i, s in enumerate(shown):
+        with grid_cols[i % 3]:
+            with st.container(border=True):
+                r = s.get("base_ratio") or {}
+                st.markdown(
+                    f'<div class="fr-kb-title">{s.get("diagram_no", "")} · {s.get("title", "")}</div>'
+                    f'<div class="fr-kb-meta">{source_label(s.get("source_id", ""))} '
+                    f'· 기본과실 A{r.get("a", "?")}:B{r.get("b", "?")}</div>',
+                    unsafe_allow_html=True,
+                )
+                if st.button("자세히 보기", key=f"kbcard_{s.get('source_id')}_{s.get('diagram_no')}_{i}",
+                             use_container_width=True):
+                    _kb_show_detail(s)
+
+    if len(filtered) > len(shown):
+        if st.button(f"더 보기 (+{min(30, len(filtered) - len(shown))})", use_container_width=True):
+            st.session_state["kb_browse_n"] += 30
+            st.rerun()
 
 st.divider()
 st.page_link("pages/2_상담.py", label="💬 특정 사고 상황으로 상담받기", icon="💬")

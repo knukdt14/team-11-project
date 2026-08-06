@@ -35,12 +35,12 @@ from woo.components.widgets import (  # noqa: E402
     hero,
     inject_css,
     ratio_hero,
-    sidebar_nav,
+    top_nav,
 )
 
 st.set_page_config(page_title="상담 · 과실비율", page_icon="💬", layout="wide")
 inject_css()
-sidebar_nav("consult")
+top_nav("consult")
 # 홈·지식베이스 페이지와 같은 큰 그라데이션 제목 박스로 통일 (예전엔 이 페이지만 작은 텍스트였음).
 hero("💬 과실비율 상담", "사고 상황을 편하게 말씀해 주세요. 채팅하듯 입력하시면 됩니다.")
 
@@ -359,9 +359,13 @@ with col_law:
                 st.caption("⚠️ 현재 시행 중이 아닌 조문입니다.")
 
 with col_case:
-    st.markdown('<div class="fr-section-title">⚖️ 유사사례 (심의사례)</div>', unsafe_allow_html=True)
-    # "참고용" 안내는 각 항목 expander 안 '주의' 문구로 이미 들어가 있어 여기선 생략
-    # (왼쪽 관련 법규 컬럼과 시작 높이를 맞추기 위함).
+    st.markdown(
+        '<div class="fr-section-title">⚖️ 유사사례 (심의사례) '
+        '<span class="fr-badge fr-badge-ref" style="margin-left:6px;font-size:0.78rem;">참고용 · 계산에 미사용</span></div>',
+        unsafe_allow_html=True,
+    )
+    # 위 배지로 "참고용"임을 명확히 표시했으니, 각 항목 expander 안 '주의' 문구는 유지하되
+    # 여기 섹션 타이틀에서부터 계산에 안 쓰인다는 걸 바로 알 수 있게 함.
     유사사례 = result.get("유사사례", [])
     if not 유사사례:
         st.caption("관련 심의사례가 없습니다.")

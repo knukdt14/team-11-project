@@ -29,10 +29,17 @@ def _fallback(context: dict[str, Any]) -> str:
 
 def _prompt(context: dict[str, Any]) -> str:
     return (
-        "교통사고 과실비율 상담 보조자입니다. 아래 JSON의 사실과 근거만 사용하세요. "
-        "숫자를 새로 계산하거나 법령·판례를 만들지 말고 최종과실을 그대로 설명하세요. "
-        "실제 판단은 증거와 사실에 따라 달라질 수 있음을 명시하세요.\n"
-        + json.dumps(context, ensure_ascii=False)
+        "당신은 교통사고 과실비율 상담 보조자입니다. 아래 참고 데이터(JSON)를 보고 "
+        "상담자의 질문에 자연스러운 한국어 문장 2~4개로 답하세요. JSON의 필드명이나 "
+        "리스트를 그대로 베끼지 말고 실제 대화체로 풀어서 설명하세요.\n\n"
+        "'최종과실' 숫자는 JSON에 적힌 값을 그대로 전달하고, 다른 비율을 새로 "
+        "계산하거나 만들어내지 마세요. 법령·판례도 JSON에 없는 내용을 지어내지 마세요.\n\n"
+        "질문이 '적용할_수정요소'에 없는 조건(예: 과속, 신호위반)에 대한 것이라면, "
+        "그 조건이 교통사고에서 보통 어떤 의미를 갖는지는 일반 상식으로 자연스럽게 "
+        "설명하되, 이번 사고유형 기준에는 그 조건이 수정요소로 등재되어 있지 않아 "
+        "표시된 비율에는 반영되지 않았다는 점을 함께 알려주세요.\n\n"
+        "마지막에 실제 판단은 증거와 사실에 따라 달라질 수 있다고 짧게 덧붙이세요.\n\n"
+        "참고 데이터: " + json.dumps(context, ensure_ascii=False)
     )
 
 
@@ -48,7 +55,11 @@ def _gemini(prompt: str) -> str:
         params={"key": settings.gemini_api_key},
         json={
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0, "maxOutputTokens": 512},
+            "generationConfig": {
+                "temperature": 0,
+                "maxOutputTokens": 1024,
+                "thinkingConfig": {"thinkingBudget": 0},
+            },
         },
         timeout=settings.gemini_timeout,
     )

@@ -13,8 +13,8 @@ from pathlib import Path
 
 import streamlit as st
 
-나_색 = "#2E5BFF"
-상대_색 = "#FF6B6B"
+나_색 = "#3366FF"
+상대_색 = "#F5A524"
 
 _BADGE_STYLE = {
     "높음": ("#DCFCE7", "#166534"),
@@ -30,6 +30,7 @@ _NAV_PAGES = [
     ("consult", "💬", "상담", "pages/2_상담.py"),
     ("video", "🎥", "영상 분석", "pages/4_영상분석.py"),
     ("kb", "📚", "지식베이스", "pages/3_지식베이스.py"),
+    ("stats", "📊", "통계", "pages/5_통계.py"),
 ]
 
 
@@ -59,6 +60,49 @@ def inject_css() -> None:
     st.markdown(
         f"""
         <style>
+        /* ── 디자인 토큰 (목업 디자인 언어: 파랑+노랑 듀오톤) ────────── */
+        /* Streamlit 자체 다크모드(설정 메뉴)를 따라가도록 prefers-color-scheme만 쓰고,
+           별도 토글 버튼은 안 만듭니다 — Streamlit 테마 전환과 두 개의 스위치가
+           서로 싸우는 걸 피하기 위함. */
+        :root {{
+            --fr-blue-50:#eef4ff; --fr-blue-100:#dbe7ff; --fr-blue-500:{나_색}; --fr-blue-600:#2d5ce0;
+            --fr-yellow-50:#fffaeb; --fr-yellow-500:{상대_색}; --fr-yellow-700:#946100;
+            --fr-green-500:#17b26a; --fr-red-500:#e6483d;
+            --fr-bg:#f6f8fb; --fr-surface:#ffffff; --fr-surface-2:#f0f3f8;
+            --fr-border:#e4e8f0; --fr-text:#161b26; --fr-text-2:#4b5468; --fr-text-3:#8a93a6;
+        }}
+        @media (prefers-color-scheme: dark) {{
+            :root {{
+                --fr-bg:#0e1116; --fr-surface:#171b23; --fr-surface-2:#1f2430;
+                --fr-border:#2a303c; --fr-text:#e9edf5; --fr-text-2:#aab2c5; --fr-text-3:#6b7386;
+                --fr-blue-50:#182449; --fr-blue-100:#1d2c5c; --fr-yellow-50:#3a2f14;
+            }}
+        }}
+
+        /* ── 상단 pill 탭 내비게이션 (사이드바 대신) ─────────────── */
+        .fr-topnav-brand {{
+            display:flex; align-items:center; gap:8px; font-weight:800; font-size:1.1rem;
+            color:var(--fr-text); white-space:nowrap; padding:6px 0;
+        }}
+        .fr-topnav-mark {{
+            width:26px; height:26px; border-radius:8px; background:var(--fr-blue-500); color:#fff;
+            display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; flex-shrink:0;
+        }}
+        .st-key-fr_topnav .stButton>button {{
+            border-radius:999px !important; font-weight:600 !important; font-size:0.95rem !important;
+            padding:8px 16px !important; border:none !important; box-shadow:none !important;
+            background:transparent !important; color:var(--fr-text-2) !important; width:100%;
+        }}
+        .st-key-fr_topnav .stButton>button:hover {{ background:var(--fr-surface-2) !important; }}
+        .st-key-fr_topnav .stButton>button[kind="primary"] {{
+            background:var(--fr-blue-50) !important; color:var(--fr-blue-600) !important;
+            font-weight:700 !important;
+        }}
+        .st-key-fr_topnav .stButton>button[kind="primary"]:hover {{ background:var(--fr-blue-100) !important; }}
+        .st-key-fr_topnav {{
+            border-bottom:1px solid var(--fr-border); padding-bottom:10px; margin-bottom:20px;
+        }}
+
         /* ── 전역 타이포 ─────────────────────────────────────── */
         html, body, [class*="css"] {{
             font-family: "Pretendard", -apple-system, "Segoe UI", "Malgun Gothic",
@@ -153,6 +197,12 @@ def inject_css() -> None:
             display:inline-flex; align-items:center; gap:6px; padding:7px 15px;
             border-radius:999px; font-size:0.92rem; font-weight:600;
         }}
+        /* 공식 기준 vs 참고 사례(계산에 안 쓰임)를 색으로 확실히 구분 */
+        .fr-badge-official {{ background:var(--fr-blue-500); color:#fff; }}
+        .fr-badge-ref {{
+            border:1px solid var(--fr-yellow-500); color:var(--fr-yellow-700);
+            background:var(--fr-yellow-50);
+        }}
         .fr-status-on {{ background:#DCFCE7; color:#166534; }}
         .fr-status-off {{ background:#FEF3C7; color:#92400E; }}
         .fr-dot {{ width:8px; height:8px; border-radius:50%; display:inline-block; }}
@@ -167,6 +217,10 @@ def inject_css() -> None:
            문제 때문입니다 — st.columns는 세로로 자동 stretch가 안 돼서, 가장 긴
            예시(3줄)를 기준으로 넉넉하게 잡아야 3개 카드 높이가 맞습니다. */
         .fr-example-q {{ font-size:1.08rem; color:#1E293B; line-height:1.55; min-height:4.8em; }}
+        .fr-example-tag {{
+            display:inline-block; font-size:0.78rem; font-weight:700; color:var(--fr-blue-600);
+            background:var(--fr-blue-50); padding:4px 10px; border-radius:6px; margin-bottom:10px;
+        }}
 
         /* ── 되묻기 칩 ────────────────────────────────────────── */
         .fr-chip {{
@@ -342,6 +396,43 @@ def sidebar_nav(active: str) -> None:
             )
             if clicked and not is_active:
                 st.switch_page(target)
+
+
+def top_nav(active: str, status_html: str | None = None) -> None:
+    """상단 pill 탭 내비게이션 (목업 디자인 언어 — 사이드바 대신 상단바).
+
+    로고 + 5개 탭(홈/상담/영상분석/지식베이스/통계) + (선택) 우측 상태 배지를
+    한 줄에 배치합니다. 페이지 맨 위, `inject_css()` 바로 다음에 호출하세요.
+    `status_html`에 `status_pill()` 반환값을 넘기면 우측에 표시됩니다.
+
+    st.button + st.switch_page 조합을 씁니다(sidebar_nav()와 동일한 이유 —
+    st.page_link는 중첩 구조 때문에 CSS로 스타일링이 안 먹힘).
+    """
+    with st.container(key="fr_topnav"):
+        n = len(_NAV_PAGES)
+        cols = st.columns([2.2] + [1] * n + [2.4])
+        with cols[0]:
+            st.markdown(
+                '<div class="fr-topnav-brand"><span class="fr-topnav-mark">과</span>과실비율 상담</div>',
+                unsafe_allow_html=True,
+            )
+        for i, (page_id, emoji, label, target) in enumerate(_NAV_PAGES):
+            is_active = page_id == active
+            with cols[i + 1]:
+                clicked = st.button(
+                    f"{emoji} {label}",
+                    key=f"topnav_{page_id}",
+                    use_container_width=True,
+                    type="primary" if is_active else "secondary",
+                )
+                if clicked and not is_active:
+                    st.switch_page(target)
+        with cols[-1]:
+            if status_html:
+                st.markdown(
+                    f'<div style="display:flex;justify-content:flex-end;padding-top:8px;">{status_html}</div>',
+                    unsafe_allow_html=True,
+                )
 
 
 def hero(title: str, subtitle: str) -> None:
