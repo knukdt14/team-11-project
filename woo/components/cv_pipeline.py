@@ -20,9 +20,11 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from services.cv.collision import detect_from_features  # noqa: E402
-from services.cv.extract import COLORS  # noqa: E402
+from services.cv.extract import COLORS, extract_evidence  # noqa: E402
 from services.cv.track import Tracker  # noqa: E402
 from services.cv.trajectory import video_to_features  # noqa: E402
+
+from woo.components.api import _local_searcher  # noqa: E402
 
 _TRAJ_COLOR = (255, 200, 0)  # BGR — 하늘색 계열, 이동 궤적 선
 _IMPACT_COLOR = (0, 0, 255)  # BGR — 빨강, 충돌 지점 마커
@@ -87,6 +89,32 @@ def _draw_frame(frame, boxes, trails: dict[int, list[tuple[int, int]]], is_impac
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, _IMPACT_COLOR, 2, cv2.LINE_AA,
             )
     return img
+
+
+def assess_fault_from_video(video_path: str, out_dir: str, api_key: str | None = None) -> dict:
+    """영상 → 사고 근거 프레임 저장 → Gemini+RAG 과실 판정까지 한 번에.
+
+    hani의 `extract_evidence()`(사고 전후 프레임을 박스 그려서 jpg로 저장)와
+    `gemini_fault.assess_fault()`(그 이미지+taek 검색결과로 Gemini 2회 호출해 과실
+    판정)를 그대로 이어붙인 것뿐입니다 — Searcher만 `woo.components.api`의
+    캐시된 인스턴스를 재사용해 검색엔진을 중복 로딩하지 않게 했습니다.
+
+    반환: {is_accident, impact_frame, frame_paths, 과실, 근거도표, 설명, 상황, 후보기준, ...}
+    사고 미감지 시 {"is_accident": False}만, Gemini 실패 시 {"error": "..."} 포함.
+    """
+    from services.cv.gemini_fault import assess_fault
+
+    tracker = _tracker()
+    ev = extract_evidence(video_path, out_dir, tracker=tracker)
+    if not ev["is_accident"]:
+        return {"is_accident": False}
+
+    searcher = _local_searcher()
+    result = assess_fault(ev["frame_paths"], searcher, api_key=api_key)
+    result["is_accident"] = True
+    result["impact_frame"] = ev["impact_frame"]
+    result["frame_paths"] = ev["frame_paths"]
+    return result
 
 
 def render_annotated_frames(
