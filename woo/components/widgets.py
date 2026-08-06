@@ -251,6 +251,33 @@ def inject_css() -> None:
             align-items: flex-start !important;
         }}
 
+        /* ── 마스코트 말풍선 ──────────────────────────────────── */
+        .fr-mascot-row {{
+            display:flex; align-items:flex-start; gap:14px; margin:14px 0 22px 0;
+        }}
+        .fr-mascot-avatar {{
+            font-size:2.2rem; line-height:1; flex-shrink:0;
+            width:60px; height:60px; display:flex; align-items:center; justify-content:center;
+            background:#FFFFFF; border:2px solid #E2E8F0; border-radius:50%;
+            box-shadow:0 2px 8px rgba(0,0,0,0.06);
+        }}
+        .fr-mascot-bubble {{
+            position:relative; background:#FFFFFF; border:1px solid #E2E8F0;
+            border-radius:16px; padding:14px 18px; font-size:1.02rem; color:#1E293B;
+            line-height:1.65; word-break:keep-all; overflow-wrap:normal;
+            box-shadow:0 2px 10px rgba(0,0,0,0.05); max-width:680px;
+        }}
+        .fr-mascot-bubble::before {{
+            content:''; position:absolute; left:-8px; top:20px;
+            border-width:8px 8px 8px 0; border-style:solid;
+            border-color:transparent #E2E8F0 transparent transparent;
+        }}
+        .fr-mascot-bubble::after {{
+            content:''; position:absolute; left:-6px; top:21px;
+            border-width:7px 7px 7px 0; border-style:solid;
+            border-color:transparent #FFFFFF transparent transparent;
+        }}
+
         /* ── 사이드바 브랜드 ─────────────────────────────────── */
         .fr-sidebar-brand {{
             display:flex; align-items:center; gap:8px; font-weight:800;
@@ -320,6 +347,22 @@ def sidebar_nav(active: str) -> None:
 def hero(title: str, subtitle: str) -> None:
     st.markdown(
         f'<div class="fr-hero"><h1>{title}</h1><p>{subtitle}</p></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def mascot_say(text: str, emoji: str = "🕵️") -> None:
+    """캐릭터가 말풍선으로 얘기하는 것처럼 텍스트를 보여줍니다.
+
+    영상 분석처럼 "결과가 뭔지 한눈에 안 들어오는" 화면에서, 분석 상태/결과를
+    캐릭터가 직접 설명해주는 느낌을 주기 위한 것 — 텍스트만 바꿔서 여러 상황
+    (안내/성공/실패)에 재사용하세요.
+    """
+    st.markdown(
+        f'<div class="fr-mascot-row">'
+        f'<div class="fr-mascot-avatar">{emoji}</div>'
+        f'<div class="fr-mascot-bubble">{text}</div>'
+        f"</div>",
         unsafe_allow_html=True,
     )
 
