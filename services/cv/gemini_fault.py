@@ -21,7 +21,7 @@ from google import genai
 from google.genai import types
 
 
-MODEL = "gemini-2.5-flash"   # 이미지 판단 + 무료 티어
+MODEL = "gemini-2.5-flash-lite"   # 이미지 판단 + 무료 티어
 
 
 def _client(api_key=None):
