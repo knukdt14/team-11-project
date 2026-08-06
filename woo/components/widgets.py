@@ -29,6 +29,7 @@ _NAV_PAGES = [
     ("home", "🏠", "홈", "app.py"),
     ("consult", "💬", "상담", "pages/2_상담.py"),
     ("kb", "📚", "지식베이스", "pages/3_지식베이스.py"),
+    ("video", "🎥", "영상 분석", "pages/4_영상분석.py"),
 ]
 
 
