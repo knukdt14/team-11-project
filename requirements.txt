@@ -18,6 +18,10 @@ numpy
 pillow
 pytest
 httpx
+python-dotenv
+google-genai
+imageio-ffmpeg
+flask
 
 
 

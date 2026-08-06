@@ -22,11 +22,11 @@ from woo.components.cv_pipeline import (  # noqa: E402
     assess_fault_from_evidence,
     make_annotated_video_bytes,
 )
-from woo.components.widgets import hero, inject_css, mascot_say, ratio_hero, sidebar_nav  # noqa: E402
+from woo.components.widgets import hero, inject_css, mascot_say, ratio_hero, top_nav  # noqa: E402
 
 st.set_page_config(page_title="영상 분석 · 과실비율", page_icon="🎥", layout="wide")
 inject_css()
-sidebar_nav("video")
+top_nav("video")
 hero(
     "🎥 CCTV 영상 분석",
     "교차로 CCTV 사고 영상을 올리면 차량 검출·추적·궤적·충돌 지점을 화면에 그려서 보여드립니다.",

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>사고 과실 비율 AI 가이드</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="logo">
+    <span class="mark">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="9" r="5.2" fill="#FFFFFF" fill-opacity="0.95"/>
+        <path d="M9 8.4c.6-1.2 1.8-1.8 3-1.5" stroke="#0F172A" stroke-width="1" stroke-linecap="round"/>
+        <circle cx="10.1" cy="9.2" r="0.9" fill="#0F172A"/>
+        <circle cx="13.4" cy="9.2" r="0.9" fill="#0F172A"/>
+        <path d="M9.6 11.6c.7.6 2.1.6 2.8 0" stroke="#0F172A" stroke-width="1" stroke-linecap="round"/>
+        <path d="M4.5 20c.6-3.4 3.4-5.6 7.5-5.6s6.9 2.2 7.5 5.6" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" fill="none"/>
+        <circle cx="18.3" cy="16.3" r="2.6" stroke="#FFFFFF" stroke-width="1.4" fill="#1E293B"/>
+        <line x1="20.1" y1="18.1" x2="21.6" y2="19.6" stroke="#FFFFFF" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+    </span>
+    사고 과실 비율 AI 가이드
+  </div>
+  <div class="tabs">
+    <button data-route="home" class="active">홈</button>
+    <button data-route="consult">상담</button>
+    <button data-route="video">영상 분석</button>
+    <button data-route="kb">지식베이스</button>
+    <button data-route="stats">통계</button>
+  </div>
+  <div class="spacer"></div>
+  <span id="backendBadge" class="badge-api"><span class="dot"></span> 확인 중...</span>
+  <button class="theme-toggle" id="themeToggle">🌙</button>
+</nav>
+
+<!-- HOME -->
+<section class="screen active" id="screen-home">
+  <div class="hero">
+    <div class="pill" id="homePill">✦ AI 기반 · 공식 인정기준 학습</div>
+    <h1>교통사고 과실비율을<br>근거와 함께 계산해 드립니다</h1>
+    <p>블랙박스 영상이나 사고 상황을 입력하면, 공식 「자동차사고 과실비율 인정기준」을 검색하여<br>도표·법령·판례 근거와 함께 예상 과실비율을 투명하게 보여줍니다.</p>
+    <div class="cta">
+      <button class="btn btn-primary" data-route="consult">상담 시작하기 →</button>
+      <button class="btn btn-secondary" data-route="video">🎥 영상 분석</button>
+    </div>
+  </div>
+
+  <p class="examples-label">이런 질문을 해보세요</p>
+  <div class="example-grid">
+    <div class="example-card" data-route="consult" data-fill="신호 없는 교차로에서 직진하다 좌회전 차와 부딪혔어요">
+      <span class="tag">차대차</span>
+      <p>"신호 없는 교차로에서 직진하다 좌회전 차와 부딪혔어요"</p>
+    </div>
+    <div class="example-card" data-route="consult" data-fill="야간에 뒤에서 오던 차가 제 차를 추돌했어요">
+      <span class="tag">후방추돌</span>
+      <p>"야간에 뒤에서 오던 차가 제 차를 추돌했어요"</p>
+    </div>
+    <div class="example-card" data-route="consult" data-fill="전동킥보드로 직진하는데 신호 없는 교차로에서 좌회전 차가 들이받았어요">
+      <span class="tag">개인형이동장치</span>
+      <p>"전동킥보드로 직진하는데 신호 없는 교차로에서 좌회전 차가 들이받았어요"</p>
+    </div>
+  </div>
+
+  <div class="stat-grid" id="homeStatGrid">
+    <div class="stat-card"><div class="num">—</div><div class="label">공식 인정기준 도표</div></div>
+    <div class="stat-card"><div class="num">—</div><div class="label">참조 판례</div></div>
+    <div class="stat-card"><div class="num">—</div><div class="label">관련 법조항</div></div>
+    <div class="stat-card"><div class="num">24/7</div><div class="label">AI 상담 가능</div></div>
+  </div>
+</section>
+
+<!-- CONSULT -->
+<section class="screen" id="screen-consult">
+  <div class="page-head"><h2>상담</h2><p>사고 상황을 자연어로 입력하면 도표 근거와 함께 과실비율을 계산합니다.</p></div>
+  <div class="consult-wrap">
+    <div class="panel chat-panel">
+      <h3>대화</h3>
+      <div class="chat-log" id="chatLog">
+        <div class="msg bot">안녕하세요! 사고 상황을 편하게 말씀해 주세요. 예) "신호 없는 교차로에서 직진하다 좌회전 차와 부딪혔어요"</div>
+      </div>
+      <div class="chip-row" id="followupChips"></div>
+      <div class="chat-input">
+        <input id="chatInput" placeholder="사고 상황을 입력하세요...">
+        <button id="chatSend">↑</button>
+      </div>
+    </div>
+
+    <div class="result-scroll" id="resultPanel">
+      <div class="empty-state">왼쪽에서 사고 상황을 입력하면 결과가 여기 표시됩니다.</div>
+    </div>
+  </div>
+</section>
+
+<!-- VIDEO -->
+<section class="screen" id="screen-video">
+  <div class="page-head"><h2>영상 분석</h2><p>블랙박스·CCTV 영상을 업로드하면 자동으로 사고 상황을 인식해 상담으로 연결합니다.</p></div>
+  <div class="video-wrap">
+    <div class="dropzone" id="dropzone">
+      <div id="dropzoneContent">📹 사고 영상을 <b>클릭하여 업로드</b>하세요 (mp4, avi, mov)</div>
+    </div>
+    <div id="videoReselectWrap" style="display:none;text-align:center;">
+      <button class="btn btn-secondary btn-sm" id="videoReselectBtn">🔄 다른 영상 선택</button>
+    </div>
+    <input type="file" id="videoInput" accept="video/mp4,video/avi,video/quicktime" style="display:none">
+
+    <div id="videoProgress" style="display:none" class="progress-wrap">
+      <div class="progress-bar"><div class="fill" id="videoProgressFill"></div></div>
+      <div class="step-log" id="videoStepLog">
+        <div class="step" data-label="업로드">업로드</div>
+        <div class="step" data-label="검출·추적">검출·추적</div>
+        <div class="step" data-label="충돌감지">충돌감지</div>
+        <div class="step" data-label="과실판정">과실판정</div>
+      </div>
+    </div>
+
+    <div id="videoResult"></div>
+  </div>
+</section>
+
+<!-- KNOWLEDGE BASE -->
+<section class="screen" id="screen-kb">
+  <div class="page-head"><h2>지식베이스</h2><p>공식 과실비율 인정기준 도표·법령·심의사례를 검색하고 상세 내용을 확인합니다.</p></div>
+
+  <div class="kb-search">
+    <input id="kbSearchInput" placeholder="예) 역주행, 후방추돌, 회전교차로 … (도표+법령+심의사례 통합 검색)">
+    <button class="btn btn-primary btn-sm" id="kbSearchBtn">검색</button>
+    <button class="btn btn-secondary btn-sm" id="kbSearchClear" style="display:none">✕ 검색 취소</button>
+  </div>
+
+  <div class="tree-filter">
+    <div class="tree-group">
+      <span class="tg-label">종류</span>
+      <div class="tg-chips" id="kbKindChips">
+        <span class="tree-chip active" data-kind="standard">기준 도표</span>
+        <span class="tree-chip" data-kind="law">도로교통법</span>
+        <span class="tree-chip" data-kind="case">심의사례</span>
+      </div>
+    </div>
+    <div class="tree-group">
+      <span class="tg-label">출처 문서</span>
+      <div class="tg-chips" id="kbSourceChips">
+        <span class="tree-chip active" data-source="">전체</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="kbSearchStatus" style="display:none;color:var(--text-3);font-size:12.5px;margin-bottom:10px;"></div>
+  <div class="kb-grid" id="kbGrid"></div>
+  <div style="text-align:center;margin-top:16px;">
+    <button class="btn btn-secondary btn-sm" id="kbMoreBtn" style="display:none">더 보기</button>
+  </div>
+</section>
+
+<!-- STATISTICS -->
+<section class="screen" id="screen-stats">
+  <div class="page-head"><h2>통계</h2><p>인정기준 데이터베이스 현황을 한눈에 확인합니다.</p></div>
+
+  <div class="stat-grid" id="statsGrid" style="margin-bottom:8px;">
+    <div class="stat-card"><div class="num">—</div><div class="label">전체 도표 수</div></div>
+    <div class="stat-card"><div class="num">—</div><div class="label">참조 판례 수</div></div>
+    <div class="stat-card"><div class="num">—</div><div class="label">관련 법조항 수</div></div>
+    <div class="stat-card"><div class="num">—</div><div class="label">심의사례 수</div></div>
+  </div>
+
+  <div class="chart-row">
+    <div class="panel">
+      <h3>출처 문서별 도표 수</h3>
+      <div class="bars" id="statsBySource"></div>
+    </div>
+    <div class="panel">
+      <h3>기본과실 분포 (A차량 기준)</h3>
+      <div class="bars hist-bars" id="statsByRatio"></div>
+    </div>
+  </div>
+</section>
+
+<div class="disclaimer">본 서비스가 제공하는 과실비율은 AI 기반 참고용 산정 결과이며 법적 효력이 없습니다. 실제 과실비율은 보험사·법원 판단에 따라 달라질 수 있습니다.</div>
+
+<!-- KB Modal -->
+<div class="modal-backdrop" id="kbModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modalTitle">-</h3>
+      <button class="modal-close" id="modalClose">×</button>
+    </div>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+  window.BACKEND_URL = "http://localhost:8000";
+</script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
