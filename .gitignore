@@ -236,6 +236,9 @@ __marimo__/
 pdf/
 *.pdf
 
+# 발표 슬라이드 PDF는 예외적으로 저장소에 보관 (위 원본 PDF와 별개)
+!/slides/*.pdf
+
 # ⚠️ hani/data/interim/ 은 일부러 **추적합니다.**
 #    PDF는 저장소에 없으므로, 이 JSONL이 없으면 팀원이 build_chunks.py 조차 못 돌립니다.
 #    파서를 고친 사람만 재생성해서 커밋하세요.
