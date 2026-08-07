@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "woo-streamlit",
+      "runtimeExecutable": "C:\\Users\\KDT005\\miniconda3\\envs\\team-11-project\\Scripts\\streamlit.exe",
+      "runtimeArgs": ["run", "woo/app.py", "--server.port", "8890", "--server.headless", "true"],
+      "port": 8890
+    }
+  ]
+}
