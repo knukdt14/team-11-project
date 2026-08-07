@@ -113,7 +113,8 @@ def assess_fault(frame_paths, searcher, api_key=None, top_k=3):
     """
     frame_paths : extract_evidence 결과의 frame_paths (박스 그려진 사고 프레임)
     searcher    : taek.search.Searcher 인스턴스 (hani RAG)
-    반환: dict {상황, 검색쿼리, 후보기준[list], 과실{본인,상대}, 근거도표, 설명, 주의}
+    반환: dict {상황, 검색쿼리, 후보기준[list], 과실{본인,상대}, 근거도표, 설명, 주의,
+                image_path, pdf_page, 법조항[list], 유사사례[list]}
     """
     if not frame_paths:
         return {"error": "프레임 없음 (사고 미감지)"}
@@ -134,4 +135,32 @@ def assess_fault(frame_paths, searcher, api_key=None, top_k=3):
     result["상황"] = sit.get("상황", "")
     result["검색쿼리"] = sit.get("검색쿼리", "")
     result["후보기준"] = [h.label for h in hits]
+
+    # ── 근거자료 보강: 상담탭(/consult)은 근거도표 이미지·관련 법조항·유사 심의사례를
+    # 같이 보여주는데, 영상분석은 "과실{본인,상대}" 숫자와 설명 문장만 나가서 근거가
+    # 빠져 있었습니다. Gemini가 고른 근거도표(result["근거도표"])와 매칭되는 검색
+    # hit을 찾아 같은 방식(taek.adapter)으로 변환해 붙입니다 — 새 로직을 만들지 않고
+    # 상담탭이 쓰는 변환 함수를 그대로 재사용합니다.
+    from taek.adapter import to_case_cards, to_law_cards
+
+    matched = next(
+        (h for h in hits if h.payload.get("diagram_no") == result.get("근거도표")), None
+    ) or (hits[0] if hits else None)
+    result["법조항"] = []
+    if matched:
+        p = matched.payload
+        result["image_path"] = p.get("image_path")
+        result["pdf_page"] = p.get("source_page")
+        try:
+            result["법조항"] = to_law_cards(searcher.laws_for(p.get("laws", [])))
+        except Exception:  # noqa: BLE001 — 법조항 조회 실패해도 나머지 결과는 그대로 보여줍니다.
+            pass
+
+    try:
+        result["유사사례"] = to_case_cards(
+            searcher.cases(sit.get("검색쿼리") or sit.get("상황", ""))
+        )
+    except Exception:  # noqa: BLE001 — 유사사례 조회 실패해도 나머지 결과는 그대로 보여줍니다.
+        result["유사사례"] = []
+
     return result

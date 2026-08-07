@@ -76,6 +76,20 @@ function addMsg(text, cls) {
   return d;
 }
 
+// ⚠️ 백엔드(/consult, /follow-up)는 Gemini→EXAONE→정형문장 폴백 사유를 warnings[]로
+// 실어 보내는데, 지금까지 프론트가 이걸 그냥 버리고 있었습니다 — 그래서 "왜 맨날
+// 정형 문장만 나오지?"를 서버 콘솔 로그를 직접 봐야만 알 수 있었습니다. 채팅에도
+// 작게 띄워서 사용자가 바로 원인(예: Gemini 호출 실패)을 볼 수 있게 합니다.
+function addWarningNote(warnings) {
+  if (!warnings || !warnings.length) return;
+  const d = document.createElement('div');
+  d.className = 'msg bot';
+  d.style.cssText = 'opacity:.6;font-size:11.5px;';
+  d.textContent = '⚠️ ' + warnings.join(' / ');
+  chatLog.appendChild(d);
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
 async function sendMsg(text) {
   if (!text || !text.trim()) return;
   addMsg(text, 'user');
@@ -102,6 +116,7 @@ async function sendMsg(text) {
       data = await resp.json();
       loadingMsg.remove();
       addMsg(data.답변, 'bot');
+      addWarningNote(data.warnings);
       return;  // 결과 패널(과실비율)은 그대로 — 후속질문은 숫자를 안 바꿈
     }
 
@@ -137,6 +152,7 @@ async function sendMsg(text) {
       return;
     }
     addMsg(data.답변 || `${data.도표번호} 기준으로 결과를 정리했어요. 우측을 확인해주세요.`, 'bot');
+    addWarningNote(data.warnings);
     renderConsultResult(data);
   } catch (e) {
     loadingMsg.remove();
@@ -642,6 +658,10 @@ async function analyzeVideo(file) {
         </div>`;
     } else if (data.fault) {
       const f = data.fault;
+      // ⚠️ 상담탭(renderConsultResult)과 같은 근거자료(도표 이미지·법조항·유사사례)를
+      // 여기서도 보여줍니다 — lawCardsHtml/caseCardsHtml은 상담탭에서 쓰던 함수를
+      // 그대로 재사용합니다(새로 만들지 않음). 데이터는 Flask가 /api/video/analyze
+      // 응답의 fault.image_path·fault.법조항·fault.유사사례로 실어줍니다.
       faultHtml = `
         <div class="panel" style="margin-top:14px;">
           <h3>⚖️ AI 과실비율 판정</h3>
@@ -650,6 +670,14 @@ async function analyzeVideo(file) {
           <p><b>근거 도표</b>: ${f.근거도표 || ''}</p>
           <p><b>설명</b>: ${f.설명 || ''}</p>
           <span class="badge ref">${f.주의 || '참고용'}</span>
+          ${f.image_path ? `
+          <h3 style="margin-top:18px;">📄 근거 도표</h3>
+          <div style="text-align:center;margin-bottom:14px;">
+            <img src="/media/${f.image_path}" style="max-width:100%;border-radius:10px;border:1px solid var(--border);">
+            ${f.pdf_page ? `<p style="font-size:11.5px;color:var(--text-3);margin-top:6px;">출처 p.${f.pdf_page}</p>` : ''}
+          </div>` : ''}
+          ${lawCardsHtml(f.법조항)}
+          ${caseCardsHtml(f.유사사례)}
         </div>`;
     }
 
